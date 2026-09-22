@@ -9,6 +9,9 @@
 *credentials*.json
 secrets*.json
 
+# ---------- 内部文档（只保留在本地，不进公开仓库） ----------
+CODEX_HANDOFF.md
+
 # ---------- Python ----------
 __pycache__/
 *.py[cod]

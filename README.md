@@ -23,6 +23,22 @@
 
 ---
 
+## 下载安装（普通用户）
+
+不想自己编译的话，直接下载发布包：
+
+👉 **[最新版 Releases](https://github.com/gtsdrt/gtsdrt_ai_hub_macos/releases/latest)** — 下载 `AIChatApp-<版本>.dmg`，把 App 拖进「应用程序」即可。
+
+- 系统要求：macOS 13+，**Apple Silicon（M 系列）**；Intel Mac 无法运行（本项目只发布 arm64）
+- 内嵌后端自带 67 个工具，**不需要**另行安装 Python 或依赖
+- **首次打开会被 Gatekeeper 拦截**（发布包是 ad-hoc 签名、未经 Apple 公证）：右键（或 Control + 点击）App → **打开** → 弹窗里再点一次「打开」；或执行
+  `xattr -dr com.apple.quarantine /Applications/AIChatApp.app`
+- 建议用 Release 页面公布的 SHA-256 核对下载文件
+
+想从源码运行、或自己打包 → 见下方「快速开始」。
+
+---
+
 ## 目录结构
 
 ```
