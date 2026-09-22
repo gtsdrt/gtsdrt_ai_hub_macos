@@ -1,5 +1,7 @@
 # AIChatApp · macOS AI 运维工作台
 
+[![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](LICENSE)
+
 一个**完全跑在你自己 Mac 上**的 AI 对话中枢：
 
 ```
@@ -196,4 +198,7 @@ AIChatApp/scripts/build_dmg.sh
 
 ## 许可证
 
-暂未指定。若需开源授权请补充 `LICENSE` 文件；未附加许可证时默认保留所有权利。
+[MIT License](LICENSE) © 2026 gtsdrt
+
+你可以自由使用、修改、分发（包括商用）。软件按「原样」提供，不附带任何担保；
+使用本工具对你的 Azure / Meraki 环境做任何操作，风险由使用者自行承担。
