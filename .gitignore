@@ -1,0 +1,56 @@
+# ---------- 密钥 / 本地配置（最重要，绝不要提交） ----------
+.env
+.env.*
+!.env.example
+*.pem
+*.p12
+*.mobileprovision
+*.key
+*credentials*.json
+secrets*.json
+
+# ---------- Python ----------
+__pycache__/
+*.py[cod]
+*.egg-info/
+.venv/
+venv/
+.pytest_cache/
+.mypy_cache/
+.ruff_cache/
+
+# ---------- PyInstaller / 打包产物 ----------
+build/
+dist/
+dist-onedir/
+*.spec.bak
+
+# ---------- macOS / Xcode ----------
+.DS_Store
+**/.DS_Store
+.xcbuild/
+DerivedData/
+*.xcarchive
+xcuserdata/
+*.xcuserstate
+AIChatApp/build/
+AIChatApp/Resources/backend_server/
+AIChatApp/*.dmg
+AIChatApp/*.app
+*.dmg
+
+# ---------- 运行期数据 ----------
+*.db
+*.sqlite
+*.sqlite3
+*.db-wal
+*.db-shm
+*.log
+logs/
+
+# ---------- 编辑器 ----------
+.idea/
+.vscode/
+*.swp
+.DS_Store?
+Icon?

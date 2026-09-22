@@ -1,0 +1,20 @@
+# 本地 AI 对话后端依赖
+fastapi>=0.115
+uvicorn[standard]>=0.30
+openai>=1.40
+httpx>=0.27
+python-dotenv>=1.0
+
+# 运维工具集（tools/azure_tools.py）需要的 Azure SDK
+azure-identity>=1.17
+azure-mgmt-resource>=23.0
+azure-mgmt-compute>=30.0
+azure-mgmt-network>=25.0
+azure-mgmt-monitor>=6.0
+azure-mgmt-storage>=21.0
+azure-mgmt-web>=7.0
+azure-mgmt-sql>=3.0
+azure-mgmt-keyvault>=10.0
+azure-mgmt-containerservice>=30.0
+azure-mgmt-containerinstance>=10.0
+azure-mgmt-resourcegraph>=8.0

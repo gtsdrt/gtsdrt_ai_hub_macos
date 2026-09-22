@@ -1,0 +1,302 @@
+// !$*UTF8*$!
+{
+	archiveVersion = 1;
+	classes = {
+	};
+	objectVersion = 77;
+	objects = {
+
+/* Begin PBXFileReference section */
+		1A0000000000000000000005 /* AIChatApp.app */ = {isa = PBXFileReference; explicitFileType = wrapper.application; includeInIndex = 0; path = AIChatApp.app; sourceTree = BUILT_PRODUCTS_DIR; };
+		1A0000000000000000000010 /* Info.plist */ = {isa = PBXFileReference; lastKnownFileType = text.plist.xml; path = Info.plist; sourceTree = "<group>"; };
+		1A0000000000000000000013 /* backend_server */ = {isa = PBXFileReference; lastKnownFileType = folder; includeInIndex = 0; path = backend_server; sourceTree = "<group>"; };
+		1A0000000000000000000017 /* Assets.xcassets */ = {isa = PBXFileReference; lastKnownFileType = folder.assetcatalog; path = Assets.xcassets; sourceTree = "<group>"; };
+/* End PBXFileReference section */
+
+/* Begin PBXBuildFile section */
+		1A0000000000000000000015 /* backend_server in Resources */ = {isa = PBXBuildFile; fileRef = 1A0000000000000000000013 /* backend_server */; };
+		1A0000000000000000000018 /* Assets.xcassets in Resources */ = {isa = PBXBuildFile; fileRef = 1A0000000000000000000017 /* Assets.xcassets */; };
+/* End PBXBuildFile section */
+
+/* Begin PBXShellScriptBuildPhase section */
+		1A0000000000000000000016 /* Sync backend_server */ = {
+			isa = PBXShellScriptBuildPhase;
+			alwaysOutOfDate = 1;
+			buildActionMask = 2147483647;
+			files = (
+			);
+			inputFileListPaths = (
+			);
+			inputPaths = (
+			);
+			name = "Sync backend_server";
+			outputFileListPaths = (
+			);
+			outputPaths = (
+			);
+			runOnlyForDeploymentPostprocessing = 0;
+			shellPath = /bin/sh;
+			shellScript = "set -e\n# 内嵌后端：优先 onedir 目录版（冷启动 ~1s），回退 onefile 单文件（冷启动 15~20s）\nSRC_DIR=\"${SRCROOT}/../dist-onedir/backend_server\"\nSRC_FILE=\"${SRCROOT}/../dist/backend_server\"\nDST_DIR=\"${SRCROOT}/Resources/backend_server\"\n\n# 架构闸门：内嵌后端可执行文件必须是纯 arm64（含 arm64 且不含 x86_64），否则让构建失败。\n# 本项目只发布 Apple Silicon 原生产物，不允许 Rosetta / x86_64 混入。\nassert_arm64() {\n  _f=\"$1\"\n  [ -f \"$_f\" ] || { echo \"error: 找不到内嵌后端：$_f\" >&2; exit 1; }\n  _archs=\"$(/usr/bin/lipo -archs \"$_f\" 2>/dev/null || true)\"\n  case \" $_archs \" in\n    *\" arm64 \"*) ;;\n    *) echo \"error: $_f 不含 arm64 切片（实际：$_archs）\" >&2; exit 1 ;;\n  esac\n  case \" $_archs \" in\n    *\" x86_64 \"*) echo \"error: $_f 含 x86_64 切片（实际：$_archs）——本项目只发布纯 arm64\" >&2; exit 1 ;;\n  esac\n}\n\n# 清掉历史遗留：Resources/backend_server 曾是 onefile 单文件\nif [ -e \"$DST_DIR\" ] && [ ! -d \"$DST_DIR\" ]; then\n  rm -f \"$DST_DIR\"\nfi\n\nif [ -f \"$SRC_DIR/backend_server\" ]; then\n  assert_arm64 \"$SRC_DIR/backend_server\"\n  rm -rf \"$DST_DIR\"\n  /usr/bin/ditto \"$SRC_DIR\" \"$DST_DIR\"\n  chmod +x \"$DST_DIR/backend_server\"\n  echo \"note: 已从 ../dist-onedir/backend_server 同步最新版 onedir 内嵌后端（纯 arm64）\"\nelif [ -f \"$SRC_FILE\" ]; then\n  assert_arm64 \"$SRC_FILE\"\n  rm -rf \"$DST_DIR\"\n  mkdir -p \"$DST_DIR\"\n  cp -p \"$SRC_FILE\" \"$DST_DIR/backend_server\"\n  chmod +x \"$DST_DIR/backend_server\"\n  echo \"note: 未找到 onedir（../dist-onedir/backend_server），回退用 onefile 单文件（纯 arm64）\"\nelse\n  echo \"warning: 未找到内嵌后端产物（../dist-onedir/backend_server 或 ../dist/backend_server），沿用 Resources/backend_server\"\nfi\n\nassert_arm64 \"$DST_DIR/backend_server\"";
+		};
+/* End PBXShellScriptBuildPhase section */
+
+/* Begin PBXFileSystemSynchronizedRootGroup section */
+		1A0000000000000000000006 /* Sources */ = {isa = PBXFileSystemSynchronizedRootGroup; explicitFileTypes = {}; explicitFolders = (); path = Sources; sourceTree = "<group>"; };
+/* End PBXFileSystemSynchronizedRootGroup section */
+
+/* Begin PBXFrameworksBuildPhase section */
+		1A0000000000000000000008 /* Frameworks */ = {
+			isa = PBXFrameworksBuildPhase;
+			buildActionMask = 2147483647;
+			files = (
+			);
+			runOnlyForDeploymentPostprocessing = 0;
+		};
+/* End PBXFrameworksBuildPhase section */
+
+/* Begin PBXGroup section */
+		1A0000000000000000000003 = {
+			isa = PBXGroup;
+			children = (
+				1A0000000000000000000006 /* Sources */,
+				1A0000000000000000000017 /* Assets.xcassets */,
+				1A0000000000000000000012 /* Resources */,
+				1A0000000000000000000011 /* Support */,
+				1A0000000000000000000004 /* Products */,
+			);
+			sourceTree = "<group>";
+		};
+		1A0000000000000000000012 /* Resources */ = {
+			isa = PBXGroup;
+			children = (
+				1A0000000000000000000013 /* backend_server */,
+			);
+			path = Resources;
+			sourceTree = "<group>";
+		};
+		1A0000000000000000000011 /* Support */ = {
+			isa = PBXGroup;
+			children = (
+				1A0000000000000000000010 /* Info.plist */,
+			);
+			path = Support;
+			sourceTree = "<group>";
+		};
+		1A0000000000000000000004 /* Products */ = {
+			isa = PBXGroup;
+			children = (
+				1A0000000000000000000005 /* AIChatApp.app */,
+			);
+			name = Products;
+			sourceTree = "<group>";
+		};
+/* End PBXGroup section */
+
+/* Begin PBXNativeTarget section */
+		1A0000000000000000000002 /* AIChatApp */ = {
+			isa = PBXNativeTarget;
+			buildConfigurationList = 1A000000000000000000000B /* Build configuration list for PBXNativeTarget "AIChatApp" */;
+			buildPhases = (
+				1A0000000000000000000007 /* Sources */,
+				1A0000000000000000000008 /* Frameworks */,
+				1A0000000000000000000016 /* Sync backend_server */,
+				1A0000000000000000000009 /* Resources */,
+			);
+			buildRules = (
+			);
+			dependencies = (
+			);
+			fileSystemSynchronizedGroups = (
+				1A0000000000000000000006 /* Sources */,
+			);
+			name = AIChatApp;
+			packageProductDependencies = (
+			);
+			productName = AIChatApp;
+			productReference = 1A0000000000000000000005 /* AIChatApp.app */;
+			productType = "com.apple.product-type.application";
+		};
+/* End PBXNativeTarget section */
+
+/* Begin PBXProject section */
+		1A0000000000000000000001 /* Project object */ = {
+			isa = PBXProject;
+			attributes = {
+				BuildIndependentTargetsInParallel = 1;
+				LastSwiftUpdateCheck = 1600;
+				LastUpgradeCheck = 1600;
+				TargetAttributes = {
+					1A0000000000000000000002 = {
+						CreatedOnToolsVersion = 16.0;
+					};
+				};
+			};
+			buildConfigurationList = 1A000000000000000000000A /* Build configuration list for PBXProject "AIChatApp" */;
+			developmentRegion = en;
+			hasScannedForEncodings = 0;
+			knownRegions = (
+				en,
+				Base,
+			);
+			mainGroup = 1A0000000000000000000003;
+			minimizedProjectReferenceProxies = 1;
+			preferredProjectObjectVersion = 77;
+			productRefGroup = 1A0000000000000000000004 /* Products */;
+			projectDirPath = "";
+			projectRoot = "";
+			targets = (
+				1A0000000000000000000002 /* AIChatApp */,
+			);
+		};
+/* End PBXProject section */
+
+/* Begin PBXResourcesBuildPhase section */
+		1A0000000000000000000009 /* Resources */ = {
+			isa = PBXResourcesBuildPhase;
+			buildActionMask = 2147483647;
+			files = (
+				1A0000000000000000000018 /* Assets.xcassets in Resources */,
+				1A0000000000000000000015 /* backend_server in Resources */,
+			);
+			runOnlyForDeploymentPostprocessing = 0;
+		};
+/* End PBXResourcesBuildPhase section */
+
+/* Begin PBXSourcesBuildPhase section */
+		1A0000000000000000000007 /* Sources */ = {
+			isa = PBXSourcesBuildPhase;
+			buildActionMask = 2147483647;
+			files = (
+			);
+			runOnlyForDeploymentPostprocessing = 0;
+		};
+/* End PBXSourcesBuildPhase section */
+
+/* Begin XCBuildConfiguration section */
+		1A000000000000000000000C /* Debug */ = {
+			isa = XCBuildConfiguration;
+			buildSettings = {
+				ALWAYS_SEARCH_USER_PATHS = NO;
+				CLANG_ANALYZER_NONNULL = YES;
+				CLANG_ENABLE_MODULES = YES;
+				CLANG_ENABLE_OBJC_ARC = YES;
+				COPY_PHASE_STRIP = NO;
+				DEBUG_INFORMATION_FORMAT = dwarf;
+				ENABLE_STRICT_OBJC_MSGSEND = YES;
+				ENABLE_TESTABILITY = YES;
+				GCC_C_LANGUAGE_STANDARD = gnu17;
+				GCC_DYNAMIC_NO_PIC = NO;
+				GCC_NO_COMMON_BLOCKS = YES;
+				GCC_OPTIMIZATION_LEVEL = 0;
+				GCC_PREPROCESSOR_DEFINITIONS = (
+					"DEBUG=1",
+					"$(inherited)",
+				);
+				MACOSX_DEPLOYMENT_TARGET = 13.0;
+				ARCHS = arm64;
+				EXCLUDED_ARCHS = x86_64;
+				ONLY_ACTIVE_ARCH = YES;
+				SDKROOT = macosx;
+				SWIFT_ACTIVE_COMPILATION_CONDITIONS = "DEBUG $(inherited)";
+				SWIFT_OPTIMIZATION_LEVEL = "-Onone";
+				SWIFT_VERSION = 5.0;
+			};
+			name = Debug;
+		};
+		1A000000000000000000000D /* Release */ = {
+			isa = XCBuildConfiguration;
+			buildSettings = {
+				ALWAYS_SEARCH_USER_PATHS = NO;
+				CLANG_ANALYZER_NONNULL = YES;
+				CLANG_ENABLE_MODULES = YES;
+				CLANG_ENABLE_OBJC_ARC = YES;
+				COPY_PHASE_STRIP = NO;
+				DEBUG_INFORMATION_FORMAT = "dwarf-with-dsym";
+				ENABLE_NS_ASSERTIONS = NO;
+				ENABLE_STRICT_OBJC_MSGSEND = YES;
+				GCC_C_LANGUAGE_STANDARD = gnu17;
+				GCC_NO_COMMON_BLOCKS = YES;
+				MACOSX_DEPLOYMENT_TARGET = 13.0;
+				ARCHS = arm64;
+				EXCLUDED_ARCHS = x86_64;
+				SDKROOT = macosx;
+				SWIFT_COMPILATION_MODE = wholemodule;
+				SWIFT_OPTIMIZATION_LEVEL = "-O";
+				SWIFT_VERSION = 5.0;
+				VALIDATE_PRODUCT = YES;
+			};
+			name = Release;
+		};
+		1A000000000000000000000E /* Debug */ = {
+			isa = XCBuildConfiguration;
+			buildSettings = {
+				ASSETCATALOG_COMPILER_APPICON_NAME = AppIcon;
+				ARCHS = arm64;
+				EXCLUDED_ARCHS = x86_64;
+				CODE_SIGN_STYLE = Automatic;
+				COMBINE_HIDPI_IMAGES = YES;
+				CURRENT_PROJECT_VERSION = 3;
+				ENABLE_HARDENED_RUNTIME = YES;
+				GENERATE_INFOPLIST_FILE = NO;
+				INFOPLIST_FILE = Support/Info.plist;
+				LD_RUNPATH_SEARCH_PATHS = (
+					"$(inherited)",
+					"@executable_path/../Frameworks",
+				);
+				MARKETING_VERSION = 0.2.1;
+				ONLY_ACTIVE_ARCH = NO;
+				PRODUCT_BUNDLE_IDENTIFIER = com.example.AIChatApp;
+				PRODUCT_NAME = "$(TARGET_NAME)";
+				SWIFT_EMIT_LOC_STRINGS = YES;
+			};
+			name = Debug;
+		};
+		1A000000000000000000000F /* Release */ = {
+			isa = XCBuildConfiguration;
+			buildSettings = {
+				ASSETCATALOG_COMPILER_APPICON_NAME = AppIcon;
+				ARCHS = arm64;
+				EXCLUDED_ARCHS = x86_64;
+				CODE_SIGN_STYLE = Automatic;
+				COMBINE_HIDPI_IMAGES = YES;
+				CURRENT_PROJECT_VERSION = 3;
+				ENABLE_HARDENED_RUNTIME = YES;
+				GENERATE_INFOPLIST_FILE = NO;
+				INFOPLIST_FILE = Support/Info.plist;
+				LD_RUNPATH_SEARCH_PATHS = (
+					"$(inherited)",
+					"@executable_path/../Frameworks",
+				);
+				MARKETING_VERSION = 0.2.1;
+				ONLY_ACTIVE_ARCH = NO;
+				PRODUCT_BUNDLE_IDENTIFIER = com.example.AIChatApp;
+				PRODUCT_NAME = "$(TARGET_NAME)";
+				SWIFT_EMIT_LOC_STRINGS = YES;
+			};
+			name = Release;
+		};
+/* End XCBuildConfiguration section */
+
+/* Begin XCConfigurationList section */
+		1A000000000000000000000A /* Build configuration list for PBXProject "AIChatApp" */ = {
+			isa = XCConfigurationList;
+			buildConfigurations = (
+				1A000000000000000000000C /* Debug */,
+				1A000000000000000000000D /* Release */,
+			);
+			defaultConfigurationIsVisible = 0;
+			defaultConfigurationName = Release;
+		};
+		1A000000000000000000000B /* Build configuration list for PBXNativeTarget "AIChatApp" */ = {
+			isa = XCConfigurationList;
+			buildConfigurations = (
+				1A000000000000000000000E /* Debug */,
+				1A000000000000000000000F /* Release */,
+			);
+			defaultConfigurationIsVisible = 0;
+			defaultConfigurationName = Release;
+		};
+/* End XCConfigurationList section */
+	};
+	rootObject = 1A0000000000000000000001 /* Project object */;
+}
