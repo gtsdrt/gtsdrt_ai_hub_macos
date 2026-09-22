@@ -24,6 +24,10 @@ final class AppSettings: ObservableObject {
         static let azureTenantID = "azureTenantID"
         static let azureClientID = "azureClientID"
         static let azureSubscriptionID = "azureSubscriptionID"
+        static let ndBaseURL = "ndBaseURL"
+        static let ndUsername = "ndUsername"
+        static let ndLoginDomain = "ndLoginDomain"
+        static let ndVerifyTLS = "ndVerifyTLS"
         /// 当前后端进程启动时用的凭据指纹
         static let appliedCredentialsFingerprint = "appliedCredentialsFingerprint"
         static let fontScale = "ui.fontScale"
@@ -83,6 +87,16 @@ final class AppSettings: ObservableObject {
     @Published var azureSubscriptionID: String
     @Published var merakiAPIKey: String
 
+    // Cisco Nexus Dashboard 工具凭据（Infra API + Manage API）
+    @Published var ndBaseURL: String
+    @Published var ndUsername: String
+    /// API Key 走 Keychain；为空则后端改用用户名密码登录换 token
+    @Published var ndAPIKey: String
+    @Published var ndPassword: String
+    @Published var ndLoginDomain: String
+    /// 是否校验 TLS 证书（Nexus Dashboard 多为自签证书，默认关闭）
+    @Published var ndVerifyTLS: Bool
+
     @Published var lastStatusMessage: String?
 
     private let defaults = UserDefaults.standard
@@ -136,6 +150,17 @@ final class AppSettings: ObservableObject {
             ?? dotEnv["AZURE_SUBSCRIPTION_ID"] ?? ""
         merakiAPIKey = keychain.read(KeychainStore.Keys.merakiAPIKey) ?? dotEnv["MERAKI_API_KEY"] ?? ""
 
+        ndBaseURL = defaults.string(forKey: DefaultsKey.ndBaseURL)
+            ?? dotEnv["ND_BASE_URL"] ?? ""
+        ndUsername = defaults.string(forKey: DefaultsKey.ndUsername)
+            ?? dotEnv["ND_USERNAME"] ?? ""
+        ndAPIKey = keychain.read(KeychainStore.Keys.ndAPIKey) ?? dotEnv["ND_API_KEY"] ?? ""
+        ndPassword = keychain.read(KeychainStore.Keys.ndPassword) ?? dotEnv["ND_PASSWORD"] ?? ""
+        ndLoginDomain = defaults.string(forKey: DefaultsKey.ndLoginDomain)
+            ?? dotEnv["ND_LOGIN_DOMAIN"] ?? "local"
+        ndVerifyTLS = defaults.object(forKey: DefaultsKey.ndVerifyTLS) as? Bool
+            ?? Self.boolFromEnv(dotEnv["ND_VERIFY_TLS"])
+
         if pythonPath.isEmpty {
             pythonPath = Self.detectPythonPath(projectDirectory: projectPath)
         }
@@ -164,6 +189,10 @@ final class AppSettings: ObservableObject {
         defaults.set(azureTenantID, forKey: DefaultsKey.azureTenantID)
         defaults.set(azureClientID, forKey: DefaultsKey.azureClientID)
         defaults.set(azureSubscriptionID, forKey: DefaultsKey.azureSubscriptionID)
+        defaults.set(ndBaseURL, forKey: DefaultsKey.ndBaseURL)
+        defaults.set(ndUsername, forKey: DefaultsKey.ndUsername)
+        defaults.set(ndLoginDomain, forKey: DefaultsKey.ndLoginDomain)
+        defaults.set(ndVerifyTLS, forKey: DefaultsKey.ndVerifyTLS)
 
         try keychain.save(deepseekKey, for: KeychainStore.Keys.deepseekKey)
         try keychain.save(kimiKey, for: KeychainStore.Keys.kimiKey)
@@ -171,6 +200,8 @@ final class AppSettings: ObservableObject {
         try keychain.save(loginPassword, for: KeychainStore.Keys.loginPassword)
         try keychain.save(azureClientSecret, for: KeychainStore.Keys.azureClientSecret)
         try keychain.save(merakiAPIKey, for: KeychainStore.Keys.merakiAPIKey)
+        try keychain.save(ndAPIKey, for: KeychainStore.Keys.ndAPIKey)
+        try keychain.save(ndPassword, for: KeychainStore.Keys.ndPassword)
     }
 
     func persistQuietly() {
@@ -256,15 +287,22 @@ final class AppSettings: ObservableObject {
         return environment
     }
 
-    /// Azure / Meraki 凭据对应的环境变量（空值不注入，交给 .env 或环境本身）
+    /// Azure / Meraki / Nexus Dashboard 凭据对应的环境变量（空值不注入，交给 .env 或环境本身）
     func credentialEnvironment() -> [String: String] {
-        let candidates = [
+        var candidates = [
             "AZURE_TENANT_ID": azureTenantID,
             "AZURE_CLIENT_ID": azureClientID,
             "AZURE_CLIENT_SECRET": azureClientSecret,
             "AZURE_SUBSCRIPTION_ID": azureSubscriptionID,
             "MERAKI_API_KEY": merakiAPIKey,
+            "ND_BASE_URL": ndBaseURL,
+            "ND_USERNAME": ndUsername,
+            "ND_API_KEY": ndAPIKey,
+            "ND_PASSWORD": ndPassword,
+            "ND_LOGIN_DOMAIN": ndLoginDomain,
         ]
+        // 布尔值单独处理：关闭时也要显式下发 false，否则后端会沿用 .env 里的旧值
+        candidates["ND_VERIFY_TLS"] = ndVerifyTLS ? "true" : "false"
 
         var result: [String: String] = [:]
         for (key, value) in candidates {
@@ -367,6 +405,12 @@ final class AppSettings: ObservableObject {
         return values
     }
 
+    /// .env 里的布尔值解析（1 / true / yes / on 视为 true）
+    static func boolFromEnv(_ raw: String?) -> Bool {
+        guard let value = raw?.trimmingCharacters(in: .whitespaces).lowercased() else { return false }
+        return ["1", "true", "yes", "on"].contains(value)
+    }
+
     // MARK: - 凭据是否已经生效
 
     /// 所有凭据的指纹（只存哈希，不落明文）
@@ -377,6 +421,12 @@ final class AppSettings: ObservableObject {
             azureClientSecret,
             azureSubscriptionID,
             merakiAPIKey,
+            ndBaseURL,
+            ndUsername,
+            ndAPIKey,
+            ndPassword,
+            ndLoginDomain,
+            ndVerifyTLS ? "tls-verify-on" : "tls-verify-off",
             deepseekKey,
             kimiKey,
             openaiKey,

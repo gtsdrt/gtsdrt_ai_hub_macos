@@ -214,9 +214,9 @@ class MerakiRegistryTests(MerakiToolTestBase):
     def test_11_registered_in_tool_registry(self) -> None:
         collected = {schema["function"]["name"] for schema in tools.default_schemas()}
         self.assertTrue(set(meraki_tools.TOOL_NAMES) <= collected)
-        # azure 21 + meraki 45 + ai 1
-        self.assertEqual(len(tools.default_schemas()), 67)
-        self.assertEqual(len(tools.health()["tools"]), 67)
+        # azure 21 + meraki 45 + nexus dashboard 31 + ai 1
+        self.assertEqual(len(tools.default_schemas()), 98)
+        self.assertEqual(len(tools.health()["tools"]), 98)
         self.assertEqual(len(tools.health()["groups"]["meraki"]["tools"]), 45)
 
 

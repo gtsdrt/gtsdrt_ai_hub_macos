@@ -13,6 +13,8 @@ final class KeychainStore {
         static let openaiKey = "openai_api_key"
         static let azureClientSecret = "azure_client_secret"
         static let merakiAPIKey = "meraki_api_key"
+        static let ndAPIKey = "nd_api_key"
+        static let ndPassword = "nd_password"
     }
 
     enum KeychainError: LocalizedError {

@@ -192,12 +192,21 @@ def main() -> int:
         check("storage 有值", health.get("storage") in ("sqlite", "memory"), health.get("storage"))
         check("python.executable 指向打包产物", "backend_server" in str(health.get("python", {}).get("executable", "")), health.get("python"))
         registered = health.get("tools", {}).get("tools", [])
-        # azure 21 + meraki 45 + ai 1 = 67
-        check("工具已注册（67 个）", len(registered) == 67, len(registered))
+        # azure 21 + meraki 45 + nexus dashboard 31 + ai 1 = 98
+        check("工具已注册（98 个）", len(registered) == 98, len(registered))
         check(
-            "新增的 Azure 工具在列",
-            {"list_storage_accounts", "query_resources", "get_webapp_metrics", "meraki_get_firewall_l3_rules"} <= set(registered),
+            "关键工具都在列",
+            {
+                "list_storage_accounts", "query_resources", "get_webapp_metrics",
+                "meraki_get_firewall_l3_rules",
+                "nexus_infra_cluster_health", "nexus_manage_fabrics", "nexus_overview",
+            } <= set(registered),
             sorted(set(registered))[:6],
+        )
+        check(
+            "Nexus Dashboard 工具组已注册",
+            health.get("nexus_dashboard", {}).get("tool_count") == 31,
+            health.get("nexus_dashboard", {}).get("tool_count"),
         )
         providers = health.get("ai", {}).get("providers", {})
         check("AI provider 含 openai", "openai" in providers, sorted(providers))

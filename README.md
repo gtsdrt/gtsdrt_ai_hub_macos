@@ -7,17 +7,18 @@
 ```
 ┌───────────────────────────┐        HTTP (127.0.0.1:8000)        ┌──────────────────────────────┐
 │  macOS 客户端 (SwiftUI)    │ ──────────────────────────────────▶ │  FastAPI 后端 (main.py)       │
-│  AIChatApp.app            │ ◀────────────────────────────────── │  · 67 个运维工具              │
+│  AIChatApp.app            │ ◀────────────────────────────────── │  · 98 个运维工具              │
 │  · 登录 / 对话 / 设置       │      POST /api/chat_async + 轮询      │  · SQLite 会话持久化          │
 │  · 拉起来/停止本地后端       │                                     │  · JWT 鉴权 / Google / GitHub │
 └───────────────────────────┘                                     └───────────┬──────────────────┘
                                                                               │ function calling
-                                                          ┌───────────────────┼───────────────────┐
-                                                          ▼                   ▼                   ▼
-                                                     Azure (21)         Meraki (45)      DeepSeek / Kimi / OpenAI
+                                          ┌────────────────┬────────────────┬──────────────────┬────────────────┐
+                                          ▼                ▼                ▼                  ▼
+                                    Azure (21)       Meraki (45)      Nexus Dash (31)   DeepSeek/Kimi/OpenAI
 ```
 
-- **对话即运维**：模型可以通过 function calling 直接查 Azure 订阅/资源/指标、查 Meraki 网络设备与防火墙策略。
+- **对话即运维**：模型可以通过 function calling 直接查 Azure 订阅/资源/指标、查 Meraki 网络设备与防火墙策略、
+  查 Cisco Nexus Dashboard 集群健康与 fabric/交换机清单（官方 Infra API + Manage API，只读）。
 - **密钥不出本机**：API Key 只存在本地 `.env` 与 macOS Keychain 中，客户端只与 `127.0.0.1` 通信。
 - **原生 Apple Silicon**：客户端与后端打包产物均为 arm64（不使用 Rosetta）。
 
@@ -30,7 +31,7 @@
 👉 **[最新版 Releases](https://github.com/gtsdrt/gtsdrt_ai_hub_macos/releases/latest)** — 下载 `AIChatApp-<版本>.dmg`，把 App 拖进「应用程序」即可。
 
 - 系统要求：macOS 13+，**Apple Silicon（M 系列）**；Intel Mac 无法运行（本项目只发布 arm64）
-- 内嵌后端自带 67 个工具，**不需要**另行安装 Python 或依赖
+- 内嵌后端自带 98 个工具，**不需要**另行安装 Python 或依赖
 - **首次打开会被 Gatekeeper 拦截**（发布包是 ad-hoc 签名、未经 Apple 公证）：右键（或 Control + 点击）App → **打开** → 弹窗里再点一次「打开」；或执行
   `xattr -dr com.apple.quarantine /Applications/AIChatApp.app`
 - 建议用 Release 页面公布的 SHA-256 核对下载文件
@@ -48,6 +49,7 @@
 │   ├── __init__.py               #   注册表：default_schemas() / execute_tool() / health()
 │   ├── azure_tools.py            #   21 个 Azure 工具 + 凭据探测
 │   ├── meraki_tools.py           #   45 个 Meraki 工具（直连 Dashboard REST API）
+│   ├── nexus_dashboard_tools.py  #   31 个 Nexus Dashboard 工具（官方 Infra + Manage API）
 │   └── ai_tools.py               #   1 个 AI 工具（DeepSeek 余额查询）
 ├── function_app.py               # 【历史版本】原 Azure Functions 实现，仅作参考，不再被引用
 ├── requirements-fastapi.txt      # 后端依赖
@@ -115,6 +117,7 @@ open .xcbuild/Build/Products/Debug/AIChatApp.app
 .venv/bin/python test_storage.py         # SQLite 持久化
 .venv/bin/python test_azure_tools.py     # Azure 工具（mock）
 .venv/bin/python test_meraki_tools.py    # Meraki 工具（mock）
+.venv/bin/python test_nexus_dashboard_tools.py  # Nexus Dashboard 工具（mock）
 .venv/bin/python test_google_auth.py     # Google OAuth / PKCE
 .venv/bin/python test_github_auth.py     # GitHub Device Flow
 ```
@@ -134,15 +137,30 @@ AIChatApp/scripts/build_dmg.sh
 
 ---
 
-## 工具集（67 个）
+## 工具集（98 个）
 
 | 分组 | 数量 | 能力 |
 |---|---|---|
 | **Azure** | 21 | 订阅/资源组、VM 与 CPU 指标、VNet/子网/NSG 检查、Storage/Web/SQL/KeyVault/AKS/ACI 清点、KQL `query_resources`、监控指标与指标定义 |
 | **Meraki** | 45 | 组织/网络/设备、VPN 状态与站点、设备上联、Appliance（VLAN/端口/静态路由/防火墙 L3·L7/1:1 与 1:Many NAT/端口转发/入侵检测/内容过滤/流量整形）、交换机端口与镜像、无线 SSID/RF Profile |
+| **Nexus Dashboard** | 31 | 官方 Infra API（集群/节点/健康/容量/硬件/许可/租户/远端存储/审计/集成/通用设置）+ Manage API（fabric 汇总与状态、全局与按 fabric 的交换机、接口汇总、网络/VRF/租户、邻居交换机）；另有 `nexus_overview` 一次聚合集群信息 + 健康 + fabric + 交换机汇总。**全部只读** |
 | **AI** | 1 | DeepSeek 账户余额 |
 
 只有请求里带 `"enable_tools": true` 时才会把全部 schema 挂载给模型（默认 `false`，可用环境变量 `TOOLS_ENABLED_BY_DEFAULT` 改成默认开启）；工具循环最多 `MAX_TOOL_ITERATIONS`（默认 10）轮。
+
+### Nexus Dashboard 工具怎么配
+
+1. 设置 `ND_BASE_URL`（例如 `https://nd.example.com`，只填主机，不要带 `/api/v1/...`）。
+2. 二选一认证（同时填时优先 API Key）：
+   - **API Key**：登录 Nexus Dashboard → 右上角用户名 → **Manage API keys** → Add API key，把 key 填到 `ND_API_KEY`，
+     账号填 `ND_USERNAME`（API Key 只对 local 账号有效）；
+   - **用户名密码**：填 `ND_USERNAME` + `ND_PASSWORD`，后端会自动 `POST /api/v1/infra/login` 换 token 并在进程内缓存续期，
+     登录域用 `ND_LOGIN_DOMAIN`（默认 `local`）。
+3. 自签证书的集群保持 `ND_VERIFY_TLS=false`（默认值）；换成受信任证书后再设为 `true`。
+4. 在 App 的「设置 → Nexus Dashboard 工具凭据」里也可以直接填这些值，保存后点「测试连接」会调用 `/api/v1/infra/about` 验证。
+
+> 端点路径按 Cisco 官方 OpenAPI 规范核对（Infra `https://<nd>/api/v1/infra`、Manage `https://<nd>/api/v1/manage`，4.3.1 版规范），
+> 且只注册了只读 `GET`，不包含任何创建/修改/删除/升级操作。
 
 ---
 
@@ -157,7 +175,7 @@ AIChatApp/scripts/build_dmg.sh
 | `POST` | `/api/auth/github/start` | 启动 GitHub Device Flow（返回 user_code） |
 | `GET` | `/api/auth/github/status` | 轮询设备授权状态 |
 | `GET` | `/api/health` | 健康检查：Python/架构、AI 配置、存储后端、Azure 凭据探测 |
-| `POST` | `/api/test_connection` | 测试 `azure` / `meraki` / `deepseek` 连通性 |
+| `POST` | `/api/test_connection` | 测试 `azure` / `meraki` / `nexus_dashboard` / `deepseek` 连通性 |
 | `POST` | `/api/chat` | 同步对话（长请求，最大 360s） |
 | `POST` | `/api/chat_async` | 异步对话，立即返回 `instance_id`（202） |
 | `GET` | `/api/ai_task_status` | 轮询异步任务结果 |
@@ -183,10 +201,13 @@ AIChatApp/scripts/build_dmg.sh
 | `GITHUB_CLIENT_ID` / `GITHUB_ALLOWED_LOGINS` / `GITHUB_ALLOWED_EMAILS` | GitHub 登录，同样建议配白名单 |
 | `AZURE_TENANT_ID` / `AZURE_CLIENT_ID` / `AZURE_CLIENT_SECRET` / `AZURE_SUBSCRIPTION_ID` | Azure 工具所需服务主体 |
 | `MERAKI_API_KEY` | Meraki Dashboard API Key（OAuth token 时另设 `MERAKI_AUTH_HEADER=bearer`） |
+| `ND_BASE_URL` / `ND_USERNAME` | Nexus Dashboard 集群地址与账号（如 `https://nd.example.com`） |
+| `ND_API_KEY` **或** `ND_PASSWORD` + `ND_LOGIN_DOMAIN` | 两种官方认证方式二选一：API Key（`X-Nd-Username` + `X-Nd-Apikey`）或用户名密码登录换 token（默认域 `local`） |
+| `ND_VERIFY_TLS` | 默认 `false`（Nexus Dashboard 出厂多为自签证书，等同官方示例的 `--insecure`） |
 | `HOST` / `PORT` / `API_PREFIX` / `LOG_LEVEL` | 服务监听与日志 |
 | `AICHAT_DB_PATH` | 会话库位置，默认 `~/Library/Application Support/AIChatApp/aichat.db` |
 | `AI_MOCK_MODE` / `MAX_TOOL_ITERATIONS` / `TASK_TTL_HOURS` | 行为调优 |
-| `TOOLS_ENABLED_BY_DEFAULT` | 设为 `true` 时所有对话默认挂载 67 个工具（默认 `false`，按需在请求里开） |
+| `TOOLS_ENABLED_BY_DEFAULT` | 设为 `true` 时所有对话默认挂载 98 个工具（默认 `false`，按需在请求里开） |
 
 系统环境变量优先于 `.env`（已存在的变量不会被覆盖）。
 
@@ -217,4 +238,4 @@ AIChatApp/scripts/build_dmg.sh
 [MIT License](LICENSE) © 2026 gtsdrt
 
 你可以自由使用、修改、分发（包括商用）。软件按「原样」提供，不附带任何担保；
-使用本工具对你的 Azure / Meraki 环境做任何操作，风险由使用者自行承担。
+使用本工具对你的 Azure / Meraki / Nexus Dashboard 环境做任何操作，风险由使用者自行承担。

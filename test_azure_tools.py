@@ -490,7 +490,8 @@ class BehaviourTests(AzureToolTestBase):
     def test_18_default_schemas_and_health(self) -> None:
         collected = {schema["function"]["name"] for schema in tools.default_schemas()}
         self.assertTrue(set(azure_tools.TOOL_NAMES) <= collected)
-        self.assertEqual(len(tools.default_schemas()), 67)
+        # azure 21 + meraki 45 + nexus dashboard 31 + ai 1
+        self.assertEqual(len(tools.default_schemas()), 98)
         self.assertEqual(sorted(tools.health()["tools"]), sorted(collected))
         self.assertEqual(len(azure_tools.health()["tools"]), 21)
 

@@ -10,6 +10,7 @@ final class FirstRunChecklist: ObservableObject {
         case provider
         case azure
         case meraki
+        case nexusDashboard
         case storage
 
         var id: String { rawValue }
@@ -21,6 +22,7 @@ final class FirstRunChecklist: ObservableObject {
             case .provider: return "AI Provider"
             case .azure: return "Azure 凭据"
             case .meraki: return "Meraki 凭据"
+            case .nexusDashboard: return "Nexus Dashboard 凭据"
             case .storage: return "存储"
             }
         }
@@ -32,6 +34,7 @@ final class FirstRunChecklist: ObservableObject {
             case .provider: return .provider
             case .azure: return .azure
             case .meraki: return .meraki
+            case .nexusDashboard: return .nexusDashboard
             }
         }
     }
@@ -45,10 +48,13 @@ final class FirstRunChecklist: ObservableObject {
         case failed(String)
         /// ⚠ 橙（比如存储是 memory）
         case warning(String)
+        /// ○ 灰：可选项没配（例如 Nexus Dashboard），既不阻塞就绪也不算警告
+        case optional(String)
 
         var text: String {
             switch self {
-            case .checking(let text), .ok(let text), .failed(let text), .warning(let text):
+            case .checking(let text), .ok(let text), .failed(let text),
+                 .warning(let text), .optional(let text):
                 return text
             }
         }
@@ -70,6 +76,11 @@ final class FirstRunChecklist: ObservableObject {
 
         var isWarning: Bool {
             if case .warning = self { return true }
+            return false
+        }
+
+        var isOptional: Bool {
+            if case .optional = self { return true }
             return false
         }
     }
@@ -167,6 +178,10 @@ final class FirstRunChecklist: ObservableObject {
         statuses[.meraki] = health.meraki?.configured == true
             ? .ok("已配置")
             : .failed("未配置")
+        // Nexus Dashboard 是可选工具：没配既不算失败也不算警告，不阻塞「可以登录了」
+        statuses[.nexusDashboard] = health.nexusDashboard?.configured == true
+            ? .ok("已配置")
+            : .optional("未配置（可选，不影响其它工具）")
 
         switch health.storageType?.lowercased() {
         case "sqlite":
@@ -191,6 +206,7 @@ final class FirstRunChecklist: ObservableObject {
             .provider: .checking("等待后端"),
             .azure: .checking("等待后端"),
             .meraki: .checking("等待后端"),
+            .nexusDashboard: .checking("等待后端"),
             .storage: .checking("等待后端"),
         ]
         isReady = false

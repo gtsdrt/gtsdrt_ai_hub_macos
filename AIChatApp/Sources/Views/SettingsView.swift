@@ -51,6 +51,7 @@ struct SettingsView: View {
                     backendSection.id(SettingsSection.backend)
                     azureSection.id(SettingsSection.azure)
                     merakiSection.id(SettingsSection.meraki)
+                    nexusDashboardSection.id(SettingsSection.nexusDashboard)
                     providerSection.id(SettingsSection.provider)
                     loginSection.id(SettingsSection.login)
                     logSection.id(SettingsSection.log)
@@ -80,6 +81,12 @@ struct SettingsView: View {
             settings.azureClientSecret,
             settings.azureSubscriptionID,
             settings.merakiAPIKey,
+            settings.ndBaseURL,
+            settings.ndUsername,
+            settings.ndAPIKey,
+            settings.ndPassword,
+            settings.ndLoginDomain,
+            settings.ndVerifyTLS ? "tls-on" : "tls-off",
             settings.deepseekKey,
             settings.kimiKey,
             settings.defaultProvider,
@@ -347,6 +354,79 @@ struct SettingsView: View {
 
                 ConnectionTestResultView(state: tester.state(for: ConnectionTester.Target.meraki)) {
                     tester.restartBackendAndTest(target: ConnectionTester.Target.meraki)
+                }
+            }
+            .padding(6)
+        }
+    }
+
+    // MARK: - Nexus Dashboard 工具凭据
+
+    private var nexusDashboardSection: some View {
+        GroupBox("Nexus Dashboard 工具（官方 Infra API + Manage API）") {
+            VStack(alignment: .leading, spacing: 10) {
+                SettingRow(title: "ND_BASE_URL") {
+                    HStack(spacing: 6) {
+                        TextField("https://nd.example.com", text: $settings.ndBaseURL)
+                            .textFieldStyle(.roundedBorder)
+                        FieldHelpIcon(help: "Nexus Dashboard 集群地址：只填主机名/IP，不要带 /api/v1/...（后端自动拼 Infra 与 Manage 两套基地址）")
+                    }
+                }
+
+                SettingRow(title: "ND_USERNAME") {
+                    HStack(spacing: 6) {
+                        TextField("admin", text: $settings.ndUsername)
+                            .textFieldStyle(.roundedBorder)
+                        FieldHelpIcon(help: "Nexus Dashboard 的本地账号（API Key 只对 local 账号有效）")
+                    }
+                }
+
+                SettingRow(title: "ND_API_KEY") {
+                    HStack(spacing: 6) {
+                        SecureField("留空则改用下面的用户名密码登录", text: $settings.ndAPIKey)
+                            .textFieldStyle(.roundedBorder)
+                        FieldHelpIcon(help: "右上角用户名 → Manage API keys → Add API key。留空则后端用 ND_PASSWORD 调 /api/v1/infra/login 换 token")
+                    }
+                }
+
+                SettingRow(title: "ND_PASSWORD") {
+                    HStack(spacing: 6) {
+                        SecureField("仅在不用 API Key 时填写", text: $settings.ndPassword)
+                            .textFieldStyle(.roundedBorder)
+                        FieldHelpIcon(help: "密码模式：后端 POST /api/v1/infra/login 拿 jwttoken，进程内缓存 10 分钟后自动续期")
+                    }
+                }
+
+                SettingRow(title: "ND_LOGIN_DOMAIN") {
+                    HStack(spacing: 6) {
+                        TextField("local", text: $settings.ndLoginDomain)
+                            .textFieldStyle(.roundedBorder)
+                        FieldHelpIcon(help: "密码模式的登录域，本地账号填 local；对接外部认证域时填对应域名")
+                    }
+                }
+
+                Toggle("校验 TLS 证书（自签证书请保持关闭）", isOn: $settings.ndVerifyTLS)
+
+                HStack(spacing: 10) {
+                    Button("保存 Nexus Dashboard 凭据") { saveSettings() }
+                    ConnectionTestButton(
+                        title: "测试连接",
+                        isRunning: tester.isRunning(ConnectionTester.Target.nexusDashboard)
+                    ) {
+                        tester.test(target: ConnectionTester.Target.nexusDashboard)
+                    }
+                }
+
+                Text("当前后端进程：\(backend.ndConfigured == true ? "已检测到 Nexus Dashboard 凭据" : "未检测到 Nexus Dashboard 凭据")。凭据改动需要重启后端才会生效。")
+                    .appFont(.caption)
+                    .foregroundStyle(.secondary)
+
+                Text("只读工具：Infra API 覆盖集群/节点/健康/容量/许可/租户/集成，Manage API 覆盖 fabric/交换机/接口/网络/VRF，不含任何写操作。")
+                    .appFont(.caption)
+                    .foregroundStyle(.secondary)
+
+                ConnectionTestResultView(state: tester.state(for: ConnectionTester.Target.nexusDashboard)) {
+                    tester.restartBackendAndTest(target: ConnectionTester.Target.nexusDashboard)
                 }
             }
             .padding(6)

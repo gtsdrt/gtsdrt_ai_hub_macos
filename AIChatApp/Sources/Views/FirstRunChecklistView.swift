@@ -106,6 +106,9 @@ struct FirstRunChecklistView: View {
         case .warning:
             Image(systemName: "exclamationmark.triangle.fill")
                 .foregroundStyle(.orange)
+        case .optional:
+            Image(systemName: "minus.circle")
+                .foregroundStyle(.secondary)
         }
     }
 

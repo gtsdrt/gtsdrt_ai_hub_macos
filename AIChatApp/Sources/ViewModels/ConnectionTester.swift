@@ -11,6 +11,8 @@ final class ConnectionTester: ObservableObject {
     enum Target {
         static let azure = "azure"
         static let meraki = "meraki"
+        /// 后端 /api/test_connection 的 target 名
+        static let nexusDashboard = "nexus_dashboard"
     }
 
     enum State: Equatable {

@@ -192,7 +192,7 @@ if BASE_DIR not in sys.path:
     sys.path.insert(0, BASE_DIR)
 
 import tools as tool_registry  # noqa: E402  （必须在 sys.path 处理之后导入）
-from tools import ai_tools, azure_tools, meraki_tools  # noqa: E402
+from tools import ai_tools, azure_tools, meraki_tools, nexus_dashboard_tools  # noqa: E402
 
 # 模块加载时刻，用于 /api/health 的 uptime_seconds
 PROCESS_STARTED_AT = time.time()
@@ -1665,7 +1665,7 @@ def _run_chat_task(instance_id: str, payload: dict) -> None:
 #    直接调用工具、不走 AI 循环，所以不消耗 token；每次都实时打网络，不用任何缓存。
 # ============================================================
 
-CONNECTION_TARGETS = ("azure", "meraki", "deepseek", "kimi", "openai")
+CONNECTION_TARGETS = ("azure", "meraki", "nexus_dashboard", "deepseek", "kimi", "openai")
 
 
 def _shorten_connection_error(message: Any, limit: int = TEST_CONNECTION_ERROR_CHARS) -> str:
@@ -1682,6 +1682,8 @@ def _tool_call_for_target(target: str) -> str:
         return azure_tools.list_subscriptions({})
     if target == "meraki":
         return meraki_tools.meraki_list_organizations({})
+    if target == "nexus_dashboard":
+        return nexus_dashboard_tools.nexus_infra_about({})
     if target == "deepseek":
         return ai_tools.deepseek_get_balance({})
     if target == "openai":
@@ -1758,6 +1760,29 @@ def _summarize_organizations(payload: dict) -> tuple[str, list]:
     return f"连接成功，发现 {count} 个组织", details
 
 
+def _summarize_nexus_dashboard(payload: dict) -> tuple[str, list]:
+    """nexus_infra_about 的返回：产品名 + 版本 + 构建号"""
+    about = payload.get("data") if isinstance(payload.get("data"), dict) else {}
+
+    product = about.get("productName") or "Nexus Dashboard"
+    version = str(about.get("productVersion") or "").strip()
+    build = str(about.get("buildVersion") or "").strip()
+    details = [
+        {"name": key, "state": value}
+        for key, value in (
+            ("productName", about.get("productName")),
+            ("productVersion", version or None),
+            ("buildVersion", build or None),
+        )
+        if value
+    ]
+
+    title = f"{product} {version}".strip()
+    if build:
+        return f"连接成功，{title}（构建 {build}）", details
+    return f"连接成功，{title} 接口可访问", details
+
+
 def _summarize_balance(payload: dict) -> tuple[str, list]:
     balance_infos = payload.get("balance_infos") or []
     details = [
@@ -1789,6 +1814,8 @@ def _summarize_connection(target: str, payload: dict) -> tuple[str, list]:
         return _summarize_subscriptions(payload)
     if target == "meraki":
         return _summarize_organizations(payload)
+    if target == "nexus_dashboard":
+        return _summarize_nexus_dashboard(payload)
     if target == "openai":
         return _summarize_openai_models(payload)
     return _summarize_balance(payload)
@@ -2263,6 +2290,7 @@ async def health() -> JSONResponse:
         },
         "azure": azure_tools.health_with_probe(azure_probe),
         "meraki": tool_registry.MODULES["meraki"].health(),
+        "nexus_dashboard": tool_registry.MODULES["nexus_dashboard"].health(),
         "tools": {
             **tool_registry.health(),
             "enabled_by_default": TOOLS_ENABLED_BY_DEFAULT,

@@ -279,6 +279,7 @@ struct HealthResponse: Decodable {
     let ai: HealthAI?
     let azure: ToolGroupStatus?
     let meraki: ToolGroupStatus?
+    let nexusDashboard: ToolGroupStatus?
     /// 以下三个字段是较新的 /api/health 才有的，旧后端没有
     let deepseek: ToolGroupStatus?
     let kimi: ToolGroupStatus?
@@ -291,6 +292,7 @@ struct HealthResponse: Decodable {
         case ai
         case azure
         case meraki
+        case nexusDashboard = "nexus_dashboard"
         case deepseek
         case kimi
         case python

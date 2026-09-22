@@ -8,7 +8,7 @@
 |---|---|
 | 登录页 | Google OAuth + PKCE 或本地管理员应急登录；两条路径最终都由后端签发 JWT，token 存进 Keychain |
 | 对话页 | `POST /api/chat_async` 拿 `instance_id`，**每 2 秒**轮询 `GET /api/ai_task_status` 直到 `completed` / `failed`；左侧会话列表来自 `/api/chat_conversations`，点开会话加载 `/api/chat_history` |
-| 设置页 | 配置后端地址、Azure / Meraki 凭据（各带「测试连接」）、`DEEPSEEK_API_KEY` / `KIMI_API_KEY` / 默认 Provider（带「测试余额」）；可启动/停止/重启本地后端、写入 `.env`、查看后端日志，项目目录与 Python 解释器收在「高级选项」里 |
+| 设置页 | 配置后端地址、Azure / Meraki / Nexus Dashboard 凭据（各带「测试连接」）、`DEEPSEEK_API_KEY` / `KIMI_API_KEY` / 默认 Provider（带「测试余额」）；可启动/停止/重启本地后端、写入 `.env`、查看后端日志，项目目录与 Python 解释器收在「高级选项」里 |
 
 ### 界面字体大小（⌘+ / ⌘−）
 
@@ -113,7 +113,7 @@ AIChatApp/
 
 脚本做的事：`xcodebuild archive`（Release）→ 从 archive 取 `.app` → 按需签名 → `hdiutil create -format UDZO`
 打成 `AIChatApp-<版本号>.dmg`，最后 `hdiutil verify` 校验。版本号自动读构建出来的 `Info.plist`
-（`CFBundleShortVersionString`，来自工程里的 `MARKETING_VERSION`，当前 `0.1.9`）。
+（`CFBundleShortVersionString`，来自工程里的 `MARKETING_VERSION`，当前 `0.2.2`）。
 DMG 内容是 `AIChatApp.app` + 指向 `/Applications` 的快捷方式 + `README.txt`，拖拽即可安装。
 
 安装步骤：
@@ -201,9 +201,11 @@ App 侧还有两道闸门：`Info.plist` 的 `LSRequiresNativeExecution = true`�
 
 Ansible、用量统计这类都是**增量**功能，加在后端即可，前端和打包流程都不需要重构：
 
-1. 在 `../tools/` 下新增一个模块，照着 `azure_tools.py` / `meraki_tools.py` 的写法提供 `SCHEMAS`、
-   `TOOL_NAMES`、`execute()` 和 `health()`；在 `tools/__init__.py` 注册后，`/api/health`、
-   `enable_tools=true` 的工具循环、`/api/test_connection` 都会自动带上它。
+1. 在 `../tools/` 下新增一个模块，照着 `azure_tools.py` / `meraki_tools.py` /
+   `nexus_dashboard_tools.py` 的写法提供 `SCHEMAS`、`TOOL_NAMES`、`execute()` 和 `health()`；
+   在 `tools/__init__.py` 注册后，`/api/health`、`enable_tools=true` 的工具循环、
+   `/api/test_connection` 都会自动带上它（Nexus Dashboard 就是按这个套路加的：
+   后端 31 个工具 + 设置页一个凭据区块，前端其它地方不用改）。
 2. 需要新的 HTTP 入口时，在 `main.py` 里加路由，沿用 `Depends(require_auth)` 和
    `{"status": "success", ...}` / `{"status": "error", "message": ...}` 的返回约定。
 3. 前端只有在要展示新数据时才需要动 UI —— 工具调用的展示已经通用化：
