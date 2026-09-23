@@ -52,6 +52,7 @@ from __future__ import annotations
 import json
 import logging
 import os
+import re
 import time
 from dataclasses import dataclass, field
 from typing import Any, Optional
@@ -87,6 +88,10 @@ STDOUT_LIMIT = 6000
 STDERR_LIMIT = 2000
 
 KNOWN_PROTOCOL_PATHS = {"/run-task", "/run-ansible", "/tasks", "/health", "/docs", "/openapi.json"}
+
+# App（打包版）从 Keychain 读出密钥后在启动后端时注入的变量名前缀：
+# 容器名 ansible -> AICHAT_CONTAINER_KEY_ANSIBLE
+AUTO_KEY_ENV_PREFIX = "AICHAT_CONTAINER_KEY_"
 
 SCHEMAS: list[dict] = [
     {
@@ -233,12 +238,32 @@ class Endpoint:
         return self.mode == "all" or "*" in self.allowed_tasks
 
     @property
+    def auto_key_env(self) -> str:
+        """
+        App（打包版）从 Keychain 读出密钥后注入的变量名。
+        这样「密钥不落盘」也能用：注册表里不写 api_key，App 启动后端时注入即可。
+        """
+        return AUTO_KEY_ENV_PREFIX + re.sub(r"[^A-Za-z0-9]+", "_", self.name).upper()
+
+    @property
     def effective_key(self) -> str:
+        """取密钥：注册表里的 api_key > api_key_env 指向的变量 > App 注入的 AICHAT_CONTAINER_KEY_<NAME>"""
         if self.api_key:
             return self.api_key
-        if self.api_key_env:
+        if self.api_key_env and _env(self.api_key_env):
             return _env(self.api_key_env)
-        return ""
+        return _env(self.auto_key_env)
+
+    @property
+    def key_source(self) -> Optional[str]:
+        """密钥来自哪里（给 health / 排障用）：registry / <变量名> / None"""
+        if self.api_key:
+            return "registry"
+        if self.api_key_env and _env(self.api_key_env):
+            return self.api_key_env
+        if _env(self.auto_key_env):
+            return self.auto_key_env
+        return None
 
 
 # ------------------------------------------------------------------ 注册表
@@ -465,9 +490,11 @@ def _check_ready(endpoint: Endpoint) -> None:
     if not endpoint.url:
         raise RuntimeError("容器 " + endpoint.name + " 没有配置 url")
     if not endpoint.effective_key:
-        hint = endpoint.api_key_env or "api_key"
         raise RuntimeError(
-            "容器 " + endpoint.name + " 没有可用的 API Key（检查注册表里的 " + hint + "）"
+            "容器 " + endpoint.name + " 没有可用的 API Key。三种填法（任选其一）："
+            "① 在注册表里写 \"api_key\"；"
+            "② 写 \"api_key_env\": \"变量名\"，由环境变量提供；"
+            "③ 由 App 设置页填写（存 Keychain，启动后端时注入 " + endpoint.auto_key_env + "）。"
         )
 
 
@@ -692,6 +719,9 @@ def health() -> dict:
             "mode": "all" if endpoint.all_tasks_allowed else endpoint.mode,
             "allowed_tasks": endpoint.allowed_tasks,
             "has_api_key": bool(endpoint.effective_key),
+            # 密钥来源：registry（写在注册表里）/ 环境变量名 / None
+            "key_source": endpoint.key_source,
+            "auto_key_env": endpoint.auto_key_env,
             "timeout": endpoint.timeout,
             "source": endpoint.source,
         }

@@ -36,6 +36,7 @@ BASE2 = "https://terraform-executor.example.norwayeast.azurecontainerapps.io"
 ENV_KEYS = (
     ct.ENDPOINTS_JSON_ENV, ct.REGISTRY_FILE_ENV, ct.LEGACY_URL_ENV, ct.LEGACY_KEY_ENV,
     ct.LEGACY_NAME_ENV, ct.ALLOWED_TASKS_ENV, ct.TIMEOUT_ENV, ct.LEGACY_TIMEOUT_ENV,
+    "AICHAT_CONTAINER_KEY_C1",
 )
 
 # azure-acr 契约的 /tasks 返回（含 read_only 元数据的容器）
@@ -209,6 +210,31 @@ class RegistrySourceTests(ContainerTestBase):
             ]
         )
         self.assertEqual([item.name for item in ct.registry_entries()], ["good"])
+
+    def test_09b_app_injected_env_key_is_used_when_registry_has_none(self) -> None:
+        """App 从 Keychain 注入 AICHAT_CONTAINER_KEY_<NAME>，注册表里可以完全不写密钥"""
+        os.environ["AICHAT_CONTAINER_KEY_C1"] = "key-from-keychain"
+        self.write_registry([{"name": "c1", "url": BASE, "description": "无明文密钥"}])
+        endpoint = ct.registry_entries()[0]
+
+        self.assertEqual(endpoint.auto_key_env, "AICHAT_CONTAINER_KEY_C1")
+        self.assertEqual(endpoint.effective_key, "key-from-keychain")
+        self.assertEqual(endpoint.key_source, "AICHAT_CONTAINER_KEY_C1")
+
+    def test_09c_registry_api_key_wins_over_injected_env(self) -> None:
+        os.environ["AICHAT_CONTAINER_KEY_C1"] = "key-from-keychain"
+        self.write_registry([{"name": "c1", "url": BASE, "api_key": "key-from-registry"}])
+        endpoint = ct.registry_entries()[0]
+        self.assertEqual(endpoint.effective_key, "key-from-registry")
+        self.assertEqual(endpoint.key_source, "registry")
+
+    def test_09d_missing_key_message_lists_three_ways(self) -> None:
+        self.write_registry([{"name": "c1", "url": BASE}])
+        payload = self.result(ct.container_list_tasks({}))
+        self.assertEqual(payload["status"], "error")
+        self.assertIn("api_key", payload["message"])
+        self.assertIn("AICHAT_CONTAINER_KEY_C1", payload["message"])
+        self.assertIn("Keychain", payload["message"])
 
 
 class ListToolTests(ContainerTestBase):

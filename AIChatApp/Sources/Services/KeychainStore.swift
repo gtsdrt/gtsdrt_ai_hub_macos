@@ -15,6 +15,11 @@ final class KeychainStore {
         static let merakiAPIKey = "meraki_api_key"
         static let ndAPIKey = "nd_api_key"
         static let ndPassword = "nd_password"
+
+        /// 每个 Serverless 容器一把密钥：container_api_key_<name>（名字按容器名动态生成）
+        static func containerAPIKey(_ containerName: String) -> String {
+            "container_api_key_" + containerName.trimmingCharacters(in: .whitespaces).lowercased()
+        }
     }
 
     enum KeychainError: LocalizedError {

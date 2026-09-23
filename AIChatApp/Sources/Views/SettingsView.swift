@@ -515,6 +515,12 @@ struct SettingsView: View {
                     .appFont(.caption)
                     .foregroundStyle(.secondary)
 
+                Divider()
+
+                containerKeyRows
+
+                Divider()
+
                 HStack(spacing: 10) {
                     Button(loc.t("保存注册表")) {
                         do {
@@ -558,7 +564,55 @@ struct SettingsView: View {
                 }
             }
             .padding(6)
+            .onAppear { settings.loadContainerKeyDrafts() }
         }
+    }
+
+    /// 每个容器一行密钥输入框：存 Keychain，并写回注册表的 api_key → 立即生效、不用重启后端
+    @ViewBuilder
+    private var containerKeyRows: some View {
+        let names = AppSettings.containerNames(in: settings.containerRegistryJSON)
+
+        VStack(alignment: .leading, spacing: 8) {
+            Text(loc.t("每个容器的 API Key（存 Keychain；保存时写回注册表，立即生效）"))
+                .appFont(.caption)
+                .bold()
+                .foregroundStyle(.secondary)
+
+            if names.isEmpty {
+                Text(loc.t("上面注册表里还没有可用条目：先写好 name + url，保存后再回来填 Key。"))
+                    .appFont(.caption)
+                    .foregroundStyle(.secondary)
+            } else {
+                ForEach(names, id: \.self) { name in
+                    HStack(spacing: 8) {
+                        Text(name)
+                            .frame(width: CGFloat(120).appScaled(by: fontScale), alignment: .leading)
+                        SecureField(loc.t("容器的 X-API-Key"), text: keyDraftBinding(name))
+                            .textFieldStyle(.roundedBorder)
+                        Button(loc.t("保存密钥")) {
+                            do {
+                                try settings.saveContainerAPIKey(settings.containerKeyDrafts[name] ?? "", for: name)
+                                settings.lastStatusMessage = loc.t("容器 {0} 的密钥已保存并写回注册表，立即生效", name)
+                            } catch {
+                                settings.lastStatusMessage = error.localizedDescription
+                            }
+                        }
+                    }
+                }
+
+                Text(loc.t("保存后会写进注册表的 api_key 字段（文件权限 0600，无需重启后端）。想完全不落盘：把那一行 api_key 删掉即可——后端会改用 App 启动时注入的 AICHAT_CONTAINER_KEY_<容器名> 环境变量（那种模式改 key 需要重启后端）。"))
+                    .appFont(.caption)
+                    .foregroundStyle(.secondary)
+            }
+        }
+    }
+
+    private func keyDraftBinding(_ name: String) -> Binding<String> {
+        Binding(
+            get: { settings.containerKeyDrafts[name] ?? "" },
+            set: { settings.containerKeyDrafts[name] = $0 }
+        )
     }
 
     /// 只在「插入模板」时读一次 .env，用来把旧版 ANSIBLE_* 配置迁移进注册表

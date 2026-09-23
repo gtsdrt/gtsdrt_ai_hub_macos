@@ -310,10 +310,29 @@ final class AppSettings: ObservableObject {
         for (key, value) in credentialEnvironment() {
             environment[key] = value
         }
+        for (key, value) in containerKeyEnvironment() {
+            environment[key] = value
+        }
         if let port = backendPort {
             environment["PORT"] = String(port)
         }
         return environment
+    }
+
+    /// 每个容器一把密钥：Keychain → `AICHAT_CONTAINER_KEY_<容器名>` 环境变量。
+    /// 注册表里没写 `api_key` 时后端会用它（密钥不落盘）；写了 `api_key` 则以注册表为准。
+    func containerKeyEnvironment() -> [String: String] {
+        var result: [String: String] = [:]
+        for name in Self.containerNames(in: containerRegistryJSON) {
+            let key = keychain.read(KeychainStore.Keys.containerAPIKey(name)) ?? ""
+            guard !key.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty else { continue }
+            let variable = "AICHAT_CONTAINER_KEY_"
+                + name.replacingOccurrences(
+                    of: "[^A-Za-z0-9]+", with: "_", options: .regularExpression
+                ).uppercased()
+            result[variable] = key
+        }
+        return result
     }
 
     /// Azure / Meraki / Nexus Dashboard 凭据对应的环境变量（空值不注入，交给 .env 或环境本身）
@@ -349,9 +368,15 @@ final class AppSettings: ObservableObject {
 
     enum ContainerRegistryError: LocalizedError {
         case invalidJSON
+        case unknownContainer(String)
 
         var errorDescription: String? {
-            L("注册表不是合法的 JSON，未保存（请检查引号/逗号）")
+            switch self {
+            case .invalidJSON:
+                return L("注册表不是合法的 JSON，未保存（请检查引号/逗号）")
+            case .unknownContainer(let name):
+                return L("注册表里找不到名为 {0} 的容器，密钥只存进了 Keychain", name)
+            }
         }
     }
 
@@ -429,6 +454,91 @@ final class AppSettings: ObservableObject {
         // 注册表里可能直接写了 api_key，收紧权限到仅本人可读写
         try? FileManager.default.setAttributes([.posixPermissions: 0o600], ofItemAtPath: url.path)
         defaults.set(containerRegistryJSON, forKey: DefaultsKey.containerRegistry)
+    }
+
+    // MARK: - 每个容器的 API Key（界面输入 → Keychain，并写回注册表）
+
+    /// 界面上的密钥草稿（不进 credentialsFingerprint，避免误触发「需要重启」）
+    @Published var containerKeyDrafts: [String: String] = [:]
+
+    /// 注册表里所有容器名（按 JSON 里的顺序；JSON 非法时返回空数组）
+    nonisolated static func containerNames(in registryJSON: String) -> [String] {
+        guard
+            let data = registryJSON.data(using: .utf8),
+            let root = try? JSONSerialization.jsonObject(with: data, options: []),
+            let containers = containerArray(from: root)
+        else { return [] }
+
+        return containers.compactMap { item in
+            guard let name = (item["name"] as? String)?.trimmingCharacters(in: .whitespaces), !name.isEmpty
+            else { return nil }
+            return name
+        }
+    }
+
+    private nonisolated static func containerArray(from root: Any) -> [[String: Any]]? {
+        if let dict = root as? [String: Any] {
+            return (dict["containers"] as? [[String: Any]]) ?? (dict["endpoints"] as? [[String: Any]])
+        }
+        return root as? [[String: Any]]
+    }
+
+    /// 用 Keychain 里存的密钥预填界面草稿（只填没填过的，不覆盖用户正在输入的内容）
+    func loadContainerKeyDrafts() {
+        for name in Self.containerNames(in: containerRegistryJSON) {
+            let stored = keychain.read(KeychainStore.Keys.containerAPIKey(name)) ?? ""
+            if containerKeyDrafts[name] == nil {
+                containerKeyDrafts[name] = stored
+            }
+        }
+    }
+
+    /// 保存某个容器的密钥：
+    ///   1) 存 Keychain（App 侧的权威副本，下次打开设置页自动回填）
+    ///   2) 写回注册表 JSON 的 api_key 字段 → 后端热加载，**立即生效、不用重启**
+    /// 想完全不落盘：把 JSON 里那行 api_key 删掉即可，后端会改用 App 启动时注入的
+    /// AICHAT_CONTAINER_KEY_<NAME> 环境变量（这种模式换 key 需要重启后端）。
+    func saveContainerAPIKey(_ rawKey: String, for container: String) throws {
+        let key = rawKey.trimmingCharacters(in: .whitespacesAndNewlines)
+
+        if key.isEmpty {
+            keychain.delete(KeychainStore.Keys.containerAPIKey(container))
+        } else {
+            try keychain.save(key, for: KeychainStore.Keys.containerAPIKey(container))
+        }
+        containerKeyDrafts[container] = key
+
+        // 写回注册表
+        guard
+            let data = containerRegistryJSON.data(using: .utf8),
+            let root = try? JSONSerialization.jsonObject(with: data, options: []),
+            var containers = Self.containerArray(from: root)
+        else {
+            throw ContainerRegistryError.invalidJSON
+        }
+
+        var updated = false
+        for index in containers.indices {
+            guard (containers[index]["name"] as? String)?.trimmingCharacters(in: .whitespaces) == container
+            else { continue }
+            if key.isEmpty {
+                containers[index].removeValue(forKey: "api_key")
+            } else {
+                containers[index]["api_key"] = key
+            }
+            updated = true
+        }
+        guard updated else {
+            throw ContainerRegistryError.unknownContainer(container)
+        }
+
+        let payload: Any = (root is [[String: Any]]) ? containers : ["containers": containers]
+        let pretty = try JSONSerialization.data(
+            withJSONObject: payload,
+            options: [.prettyPrinted, .sortedKeys, .withoutEscapingSlashes]
+        )
+        containerRegistryJSON = String(data: pretty, encoding: .utf8) ?? containerRegistryJSON
+        try saveContainerRegistry()
     }
 
     /// 写入/合并项目根目录的 .env，保留文件里其它配置行

@@ -198,7 +198,18 @@ App 只是调用方，所以构建/部署跟本机没关系——**改代码 pus
 |---|---|
 | `name` | 容器名，模型用它指定容器（也是 `container_list_tasks` / `container_run_task` 的 `container` 参数） |
 | `url` | 容器 FQDN（Azure 门户 → Container App → 概述 → 应用程序 URL），只填主机、不要带 `/tasks` |
-| `api_key` / `api_key_env` | 容器要求的 `X-API-Key`；`api_key_env` 指向环境变量，密钥就不用落在文件里 |
+| `api_key` | 容器要求的 `X-API-Key`，直接写在注册表里（文件权限 0600） |
+| `api_key_env` | 改从环境变量读密钥（密钥不落盘；打包版 App 不会设置任意变量，只有开发模式/CI 适用） |
+
+**密钥填哪里（三选一，优先级从上到下）**：
+
+1. **App 设置页**（推荐，最省事）：设置 → Serverless 容器 → 下面「每个容器的 API Key」输入框 → 「保存密钥」。
+   密钥存 **Keychain**，同时写回注册表的 `api_key` → 后端**热加载，立即生效、不用重启**。
+2. **直接写注册表**：在 `containers.json` 里给该容器加 `"api_key": "..."`，保存即生效。
+3. **完全不落盘**：把注册表里的 `api_key` 行删掉即可 —— 后端会改用 App 启动时注入的
+   `AICHAT_CONTAINER_KEY_<容器名大写>` 环境变量（密钥在 Keychain 里）。这种模式**改 key 需要重启后端**
+   （环境变量是进程级的），但注册表文件里永远不会出现明文密钥。用 `GET /api/health` 的
+   `container.containers[].key_source` 可以确认当前密钥来自 registry 还是哪个环境变量。
 | `mode` | `auto`（默认）/ `list`（只信 `allowed_tasks`）/ `all`（不限制，危险） |
 | `allowed_tasks` | 白名单；写 `"*"` 等价于 `mode: all` |
 | `timeout` | 单次请求超时秒数，默认 300（ansible 任务可能跑几分钟） |
