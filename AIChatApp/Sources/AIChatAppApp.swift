@@ -6,7 +6,7 @@ struct AIChatAppApp: App {
     @StateObject private var session = SessionStore()
 
     var body: some Scene {
-        WindowGroup("本地 AI 对话") {
+        WindowGroup(L("本地 AI 对话")) {
             RootView(session: session)
                 .environmentObject(session)
                 .onAppear {
@@ -19,20 +19,20 @@ struct AIChatAppApp: App {
             CommandGroup(replacing: .newItem) {}
 
             // 界面字体大小：跟系统 App 一样用 ⌘+ / ⌘− / ⌘0
-            CommandMenu("显示") {
-                Button("放大字体") {
+            CommandMenu(L("显示")) {
+                Button(L("放大字体")) {
                     session.settings.increaseFontScale()
                 }
                 .keyboardShortcut("+", modifiers: .command)
 
-                Button("缩小字体") {
+                Button(L("缩小字体")) {
                     session.settings.decreaseFontScale()
                 }
                 .keyboardShortcut("-", modifiers: .command)
 
                 Divider()
 
-                Button("恢复默认字体大小") {
+                Button(L("恢复默认字体大小")) {
                     session.settings.resetFontScale()
                 }
                 .keyboardShortcut("0", modifiers: .command)

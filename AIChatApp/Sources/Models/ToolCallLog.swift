@@ -180,6 +180,6 @@ struct ToolCallLog: Codable, Identifiable, Hashable {
            let text = String(data: pretty, encoding: .utf8) {
             return text
         }
-        return preview.isEmpty ? "（空结果）" : preview
+        return preview.isEmpty ? L("（空结果）") : preview
     }
 }

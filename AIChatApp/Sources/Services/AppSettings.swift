@@ -31,6 +31,7 @@ final class AppSettings: ObservableObject {
         /// 当前后端进程启动时用的凭据指纹
         static let appliedCredentialsFingerprint = "appliedCredentialsFingerprint"
         static let fontScale = "ui.fontScale"
+        static let language = "ui.language"
     }
 
     static let providerOptions = ["deepseek", "kimi", "openai"]
@@ -67,6 +68,16 @@ final class AppSettings: ObservableObject {
         didSet {
             guard fontScale != oldValue else { return }
             defaults.set(fontScale, forKey: DefaultsKey.fontScale)
+        }
+    }
+
+    /// 界面语言（中文原文写在源码里，查表换英文 / 挪威语）
+    @Published var language: AppLanguage {
+        didSet {
+            guard language != oldValue else { return }
+            defaults.set(language.rawValue, forKey: DefaultsKey.language)
+            // 服务层 / ViewModel 里的文案是现算的，同步过去即可；视图靠环境里的 Localizer 重绘
+            Localizer.current = Localizer(language: language)
         }
     }
 
@@ -130,6 +141,9 @@ final class AppSettings: ObservableObject {
         // 存过就沿用，顺手夹一下范围，避免外部写坏的值让界面没法用
         let storedFontScale = defaults.object(forKey: DefaultsKey.fontScale) as? Double
         fontScale = storedFontScale.map { min(max($0, 0.6), 2.5) } ?? Self.defaultFontScale
+        // 没存过就是跟随系统（首次启动按系统语言挑一个）
+        language = AppLanguage(rawValue: defaults.string(forKey: DefaultsKey.language) ?? "")
+            ?? .system
 
         deepseekKey = keychain.read(KeychainStore.Keys.deepseekKey) ?? dotEnv["DEEPSEEK_API_KEY"] ?? ""
         kimiKey = keychain.read(KeychainStore.Keys.kimiKey) ?? dotEnv["KIMI_API_KEY"] ?? ""
@@ -164,6 +178,9 @@ final class AppSettings: ObservableObject {
         if pythonPath.isEmpty {
             pythonPath = Self.detectPythonPath(projectDirectory: projectPath)
         }
+
+        // 全部存好之后再同步语言（此时才能读 self.language）
+        Localizer.current = Localizer(language: language)
     }
 
     // MARK: - 保存
@@ -186,6 +203,7 @@ final class AppSettings: ObservableObject {
         defaults.set(openaiModel, forKey: DefaultsKey.openaiModel)
         defaults.set(openaiAuthMode, forKey: DefaultsKey.openaiAuthMode)
         defaults.set(fontScale, forKey: DefaultsKey.fontScale)
+        defaults.set(language.rawValue, forKey: DefaultsKey.language)
         defaults.set(azureTenantID, forKey: DefaultsKey.azureTenantID)
         defaults.set(azureClientID, forKey: DefaultsKey.azureClientID)
         defaults.set(azureSubscriptionID, forKey: DefaultsKey.azureSubscriptionID)
@@ -208,7 +226,7 @@ final class AppSettings: ObservableObject {
         do {
             try persist()
         } catch {
-            lastStatusMessage = "保存失败：\(error.localizedDescription)"
+            lastStatusMessage = L("保存失败：{0}", error.localizedDescription)
         }
     }
 

@@ -5,6 +5,7 @@ struct LoginView: View {
     @ObservedObject var session: SessionStore
     @StateObject private var checklist: FirstRunChecklist
     @Environment(\.appFontScale) private var fontScale
+    @Environment(\.loc) private var loc
 
     @State private var username = ""
     @State private var password = ""
@@ -23,7 +24,7 @@ struct LoginView: View {
                 Image(systemName: "bubble.left.and.bubble.right.fill")
                     .appFont(size: 34)
                     .foregroundStyle(.tint)
-                Text("本地 AI 对话")
+                Text(loc.t("本地 AI 对话"))
                     .appFont(.title2)
                     .bold()
                 Text(session.settings.backendBaseURL)
@@ -36,7 +37,7 @@ struct LoginView: View {
             } label: {
                 HStack(spacing: 8) {
                     Image(systemName: "person.crop.circle.badge.checkmark")
-                    Text(session.isLoggingIn ? "等待 Google 登录…" : "使用 Google 账号登录")
+                    Text(session.isLoggingIn ? loc.t("等待 Google 登录…") : loc.t("使用 Google 账号登录"))
                 }
                 .frame(width: CGFloat(280).appScaled(by: fontScale))
             }
@@ -48,7 +49,7 @@ struct LoginView: View {
             } label: {
                 HStack(spacing: 8) {
                     Image(systemName: "chevron.left.forwardslash.chevron.right")
-                    Text(session.isLoggingIn ? "等待 GitHub 登录…" : "使用 GitHub 账号登录")
+                    Text(session.isLoggingIn ? loc.t("等待 GitHub 登录…") : loc.t("使用 GitHub 账号登录"))
                 }
                 .frame(width: CGFloat(280).appScaled(by: fontScale))
             }
@@ -57,7 +58,7 @@ struct LoginView: View {
 
             HStack {
                 Rectangle().frame(height: 1).foregroundStyle(.quaternary)
-                Text("或使用本地管理员（应急入口）")
+                Text(loc.t("或使用本地管理员（应急入口）"))
                     .appFont(.caption)
                     .foregroundStyle(.secondary)
                     .fixedSize()
@@ -66,13 +67,13 @@ struct LoginView: View {
             .frame(width: CGFloat(360).appScaled(by: fontScale))
 
             VStack(alignment: .leading, spacing: 12) {
-                LabeledField(title: "用户名") {
+                LabeledField(title: loc.t("用户名")) {
                     TextField("admin", text: $username)
                 }
-                LabeledField(title: "密码") {
+                LabeledField(title: loc.t("密码")) {
                     SecureField("password123", text: $password)
                 }
-                Toggle("记住密码（保存在 Keychain）", isOn: $rememberPassword)
+                Toggle(loc.t("记住密码（保存在 Keychain）"), isOn: $rememberPassword)
                     .appFont(.caption)
             }
             .frame(width: CGFloat(320).appScaled(by: fontScale))
@@ -90,13 +91,13 @@ struct LoginView: View {
                     if session.isLoggingIn {
                         ProgressView().controlSize(.small)
                     } else {
-                        Text("登录")
+                        Text(loc.t("登录"))
                     }
                 }
                 .keyboardShortcut(.defaultAction)
                 .disabled(session.isLoggingIn || username.isEmpty || password.isEmpty)
 
-                Button("退出") {
+                Button(loc.t("退出")) {
                     NSApplication.shared.terminate(nil)
                 }
             }
@@ -155,10 +156,13 @@ struct LoginView: View {
 
     private var backendRow: some View {
         HStack(spacing: 10) {
-            StatusBadge(text: "本地后端：\(session.backend.status.text)", isActive: session.backend.status.isRunning)
+            StatusBadge(
+                text: loc.t("本地后端：{0}", session.backend.status.text),
+                isActive: session.backend.status.isRunning
+            )
 
             if !session.backend.status.isRunning {
-                Button("启动后端") {
+                Button(loc.t("启动后端")) {
                     session.backend.start(settings: session.settings)
                 }
                 .controlSize(.small)

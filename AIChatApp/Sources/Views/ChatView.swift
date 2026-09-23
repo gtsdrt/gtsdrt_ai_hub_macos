@@ -6,6 +6,7 @@ struct ChatView: View {
     @ObservedObject private var settings: AppSettings
     @StateObject private var model: ChatViewModel
     @Environment(\.appFontScale) private var fontScale
+    @Environment(\.loc) private var loc
 
     init(session: SessionStore) {
         self.session = session
@@ -38,7 +39,7 @@ struct ChatView: View {
     private var sidebar: some View {
         VStack(spacing: 0) {
             HStack {
-                Text("会话")
+                Text(loc.t("会话"))
                     .appFont(.headline)
                 Spacer()
                 Button {
@@ -47,7 +48,7 @@ struct ChatView: View {
                     Image(systemName: "square.and.pencil")
                 }
                 .buttonStyle(.borderless)
-                .help("新建对话")
+                .help(loc.t("新建对话"))
             }
             .padding(.horizontal, 12)
             .padding(.vertical, 10)
@@ -60,7 +61,7 @@ struct ChatView: View {
                         VStack(alignment: .leading, spacing: 3) {
                             Text(conversation.title)
                                 .lineLimit(1)
-                            Text("\(conversation.messageCount ?? 0) 条消息")
+                            Text(loc.t("{0} 条消息", String(conversation.messageCount ?? 0)))
                                 .appFont(.caption)
                                 .foregroundStyle(.secondary)
                         }
@@ -79,7 +80,7 @@ struct ChatView: View {
                     }
                     .buttonStyle(.plain)
                     .contextMenu {
-                        Button("删除这个会话", role: .destructive) {
+                        Button(loc.t("删除这个会话"), role: .destructive) {
                             Task { await model.delete(conversation) }
                         }
                     }
@@ -113,22 +114,22 @@ struct ChatView: View {
                 Button {
                     model.newConversation()
                 } label: {
-                    Label("新对话", systemImage: "plus.bubble")
+                    Label(loc.t("新对话"), systemImage: "plus.bubble")
                 }
             }
             ToolbarItem {
                 Button {
                     session.logout()
                 } label: {
-                    Label("退出登录", systemImage: "rectangle.portrait.and.arrow.right")
+                    Label(loc.t("退出登录"), systemImage: "rectangle.portrait.and.arrow.right")
                 }
             }
         }
-        .alert("已启用工具调用", isPresented: $model.showingToolsNotice) {
-            Button("继续发送") { model.confirmToolsNotice() }
-            Button("取消", role: .cancel) { model.dismissToolsNotice() }
+        .alert(loc.t("已启用工具调用"), isPresented: $model.showingToolsNotice) {
+            Button(loc.t("继续发送")) { model.confirmToolsNotice() }
+            Button(loc.t("取消"), role: .cancel) { model.dismissToolsNotice() }
         } message: {
-            Text("已启用工具调用：AI 可能会查询你的 Azure 订阅或 Meraki 网络。每次调用都会在气泡中显示。")
+            Text(loc.t("已启用工具调用：AI 可能会查询你的 Azure 订阅或 Meraki 网络。每次调用都会在气泡中显示。"))
         }
     }
 
@@ -138,10 +139,10 @@ struct ChatView: View {
                 LazyVStack(alignment: .leading, spacing: 14) {
                     if model.messages.isEmpty {
                         VStack(alignment: .leading, spacing: 6) {
-                            Text("开始新的对话")
+                            Text(loc.t("开始新的对话"))
                                 .appFont(.title3)
                                 .bold()
-                            Text("输入内容后发送，应用会调用本地后端的 /api/chat_async，并每 2 秒轮询 /api/ai_task_status 获取结果。")
+                            Text(loc.t("输入内容后发送，应用会调用本地后端的 /api/chat_async，并每 2 秒轮询 /api/ai_task_status 获取结果。"))
                                 .appFont(.callout)
                                 .foregroundStyle(.secondary)
                         }
@@ -218,7 +219,7 @@ struct ChatView: View {
                     )
 
                 if model.input.isEmpty {
-                    Text("输入消息，⌘↩ 发送")
+                    Text(loc.t("输入消息，⌘↩ 发送"))
                         .appFont(.body)
                         .foregroundStyle(.secondary)
                         .padding(.horizontal, 10)
@@ -229,7 +230,7 @@ struct ChatView: View {
 
             HStack(spacing: 10) {
                 if model.isSending {
-                    Button("取消") {
+                    Button(loc.t("取消")) {
                         model.cancelSending()
                     }
                     Spacer()
@@ -238,14 +239,14 @@ struct ChatView: View {
                         .foregroundStyle(.secondary)
                         .lineLimit(1)
                 } else {
-                    Button("发送") {
+                    Button(loc.t("发送")) {
                         model.send()
                     }
                     .keyboardShortcut(.return, modifiers: .command)
                     .disabled(model.input.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty)
 
                     Spacer()
-                    Text("走本地后端 \(settings.backendBaseURL)/api")
+                    Text(loc.t("走本地后端 {0}/api", settings.backendBaseURL))
                         .appFont(.caption)
                         .foregroundStyle(.secondary)
                 }
@@ -263,7 +264,7 @@ struct ChatView: View {
                 HStack(spacing: 4) {
                     Image(systemName: "wrench.and.screwdriver.fill")
                         .appFont(.caption)
-                    Text("工具")
+                    Text(loc.t("工具"))
                         .appFont(.caption)
                 }
                 .foregroundStyle(model.enableTools ? Color.white : Color.secondary)
@@ -281,8 +282,8 @@ struct ChatView: View {
             .buttonStyle(.plain)
             .help(
                 model.enableTools
-                    ? "工具调用已开启，AI 可执行 Azure/Meraki 查询"
-                    : "工具调用已关闭，纯对话模式"
+                    ? loc.t("工具调用已开启，AI 可执行 Azure/Meraki 查询")
+                    : loc.t("工具调用已关闭，纯对话模式")
             )
 
             Menu {
@@ -311,7 +312,7 @@ struct ChatView: View {
             }
             .menuStyle(.borderlessButton)
             .fixedSize()
-            .help("点击切换 AI Provider")
+            .help(loc.t("点击切换 AI Provider"))
 
             Spacer()
         }
@@ -320,6 +321,8 @@ struct ChatView: View {
 
 private struct MessageBubble: View {
     let message: ChatMessage
+
+    @Environment(\.loc) private var loc
 
     private var isUser: Bool { message.role == "user" }
     private var toolCalls: [ToolCallLog] { message.toolCallsLog ?? [] }
@@ -331,7 +334,7 @@ private struct MessageBubble: View {
             }
 
             VStack(alignment: .leading, spacing: 5) {
-                Text(isUser ? "我" : "AI")
+                Text(isUser ? loc.t("我") : "AI")
                     .appFont(.caption)
                     .foregroundStyle(.secondary)
 
@@ -354,12 +357,12 @@ private struct MessageBubble: View {
                 }
 
                 if !isUser, toolsDisabledWarning {
-                    Label("后端未启用工具，请检查设置", systemImage: "exclamationmark.triangle.fill")
+                    Label(loc.t("后端未启用工具，请检查设置"), systemImage: "exclamationmark.triangle.fill")
                         .appFont(.caption)
                         .foregroundStyle(.orange)
                         .padding(.leading, 2)
                 } else if !isUser, toolsNotTriggeredNote {
-                    Text("本轮未触发工具调用")
+                    Text(loc.t("本轮未触发工具调用"))
                         .appFont(.caption)
                         .foregroundStyle(.secondary)
                         .padding(.leading, 2)
@@ -392,6 +395,7 @@ private struct MessageBubble: View {
 private struct ToolCallLogSection: View {
     let logs: [ToolCallLog]
 
+    @Environment(\.loc) private var loc
     @State private var isExpanded = false
     @State private var previewLog: ToolCallLog?
 
@@ -425,11 +429,11 @@ private struct ToolCallLogSection: View {
                 Image(systemName: "wrench.and.screwdriver.fill")
                     .appFont(.caption)
                     .foregroundStyle(.secondary)
-                Text("调用了 \(logs.count) 个工具")
+                Text(loc.t("调用了 {0} 个工具", String(logs.count)))
                     .appFont(.caption)
                 Spacer(minLength: 8)
                 if hasError {
-                    Text("⚠ 有失败")
+                    Text(loc.t("⚠ 有失败"))
                         .appFont(.caption2)
                         .foregroundStyle(.red)
                         .padding(.horizontal, 6)
@@ -452,6 +456,7 @@ private struct ToolCallLogSection: View {
 /// 一次工具调用的卡片
 private struct ToolCallCard: View {
     @Environment(\.appFontScale) private var fontScale
+    @Environment(\.loc) private var loc
 
     let log: ToolCallLog
     let onShowResult: () -> Void
@@ -484,14 +489,14 @@ private struct ToolCallCard: View {
                     .foregroundStyle(.secondary)
             }
 
-            Text(log.arguments.isEmpty ? "（无参数）" : log.argumentsJSON)
+            Text(log.arguments.isEmpty ? loc.t("（无参数）") : log.argumentsJSON)
                 .appFont(.caption, design: .monospaced)
                 .foregroundStyle(.secondary)
                 .textSelection(.enabled)
                 .lineLimit(6)
                 .frame(maxWidth: .infinity, alignment: .leading)
 
-            Button("查看结果", action: onShowResult)
+            Button(loc.t("查看结果"), action: onShowResult)
                 .buttonStyle(.link)
                 .appFont(.caption)
         }
@@ -509,6 +514,7 @@ private struct ToolResultSheet: View {
     let log: ToolCallLog
 
     @Environment(\.dismiss) private var dismiss
+    @Environment(\.loc) private var loc
 
     var body: some View {
         VStack(alignment: .leading, spacing: 0) {
@@ -516,11 +522,11 @@ private struct ToolResultSheet: View {
                 Text(log.toolName)
                     .appFont(.headline)
                     .fontDesign(.monospaced)
-                Text("第 \(log.iteration) 轮 · \(log.durationMs) ms")
+                Text(loc.t("第 {0} 轮 · {1} ms", String(log.iteration), String(log.durationMs)))
                     .appFont(.caption)
                     .foregroundStyle(.secondary)
                 Spacer(minLength: 12)
-                Button("关闭") { dismiss() }
+                Button(loc.t("关闭")) { dismiss() }
                     .keyboardShortcut(.cancelAction)
             }
             .padding(12)

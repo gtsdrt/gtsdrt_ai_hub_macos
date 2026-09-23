@@ -13,6 +13,7 @@ struct FirstRunChecklistView: View {
     @State private var showingReadyBanner = false
     @State private var hideTask: Task<Void, Never>?
     @Environment(\.appFontScale) private var fontScale
+    @Environment(\.loc) private var loc
 
     var body: some View {
         Group {
@@ -47,7 +48,7 @@ struct FirstRunChecklistView: View {
             }
         } label: {
             HStack(spacing: 4) {
-                Text("首次使用？点这里检查配置")
+                Text(loc.t("首次使用？点这里检查配置"))
                 Image(systemName: isExpanded ? "chevron.down" : "chevron.right")
                     .appFont(size: 9, weight: .semibold)
             }
@@ -75,7 +76,7 @@ struct FirstRunChecklistView: View {
                         .lineLimit(2)
                         .frame(maxWidth: .infinity, alignment: .leading)
 
-                    Button("去配置") {
+                    Button(loc.t("去配置")) {
                         onOpenSettings(item.section)
                     }
                     .appFont(.caption)
@@ -119,8 +120,8 @@ struct FirstRunChecklistView: View {
             Image(systemName: "checkmark.circle.fill")
             Text(
                 checklist.hasWarnings
-                    ? "✓ 可以登录了（存储为 memory，重启会丢历史）"
-                    : "✓ 配置完整，可以登录了"
+                    ? loc.t("✓ 可以登录了（存储为 memory，重启会丢历史）")
+                    : loc.t("✓ 配置完整，可以登录了")
             )
         }
         .appFont(.callout)

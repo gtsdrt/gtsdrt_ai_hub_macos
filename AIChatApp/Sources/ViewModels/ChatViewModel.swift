@@ -9,7 +9,7 @@ enum ChatError: LocalizedError {
         case .taskFailed(let message):
             return message
         case .cancelled:
-            return "已取消本次请求"
+            return L("已取消本次请求")
         }
     }
 }
@@ -146,9 +146,9 @@ final class ChatViewModel: ObservableObject {
             .sorted()
 
         if configured.isEmpty {
-            backendSummary = "mock 模式（后端未配置 API Key）"
+            backendSummary = L("mock 模式（后端未配置 API Key）")
         } else {
-            backendSummary = "真实调用：" + configured.joined(separator: ", ")
+            backendSummary = L("真实调用：") + configured.joined(separator: ", ")
         }
     }
 
@@ -220,7 +220,7 @@ final class ChatViewModel: ObservableObject {
         input = ""
         errorMessage = nil
         isSending = true
-        phaseText = "正在提交任务…"
+        phaseText = L("正在提交任务…")
         phaseHint = ""
 
         sendTask = Task {
@@ -239,7 +239,7 @@ final class ChatViewModel: ObservableObject {
             isSending = false
             phaseText = ""
             phaseHint = ""
-            errorMessage = "已取消本次请求"
+            errorMessage = L("已取消本次请求")
         }
     }
 
@@ -264,7 +264,7 @@ final class ChatViewModel: ObservableObject {
                 conversationID = newID
                 selectedConversationID = newID
             }
-            phaseText = "任务已受理（\(started.instanceID.prefix(8))…），等待结果…"
+            phaseText = L("任务已受理（{0}…），等待结果…", String(started.instanceID.prefix(8)))
 
             let outcome = try await pollResult(instanceID: started.instanceID)
             let logs = outcome.toolCallsLog
@@ -284,11 +284,11 @@ final class ChatViewModel: ObservableObject {
         } catch is CancellationError {
             phaseText = ""
             phaseHint = ""
-            errorMessage = "已取消本次请求"
+            errorMessage = L("已取消本次请求")
         } catch ChatError.cancelled {
             phaseText = ""
             phaseHint = ""
-            errorMessage = "已取消本次请求"
+            errorMessage = L("已取消本次请求")
         } catch {
             phaseText = ""
             phaseHint = ""
@@ -310,7 +310,7 @@ final class ChatViewModel: ObservableObject {
                 let result = status.result
                 let content = (result?.response?.isEmpty == false)
                     ? result?.response ?? ""
-                    : "（后端已完成任务，但返回内容为空）"
+                    : L("（后端已完成任务，但返回内容为空）")
                 let logs = result?.toolCallsLog
                 return ChatOutcome(
                     content: content,
@@ -319,18 +319,20 @@ final class ChatViewModel: ObservableObject {
                     toolsEnabled: result?.toolsEnabled
                 )
             case "failed":
-                throw ChatError.taskFailed(status.error ?? status.message ?? "任务执行失败")
+                throw ChatError.taskFailed(status.error ?? status.message ?? L("任务执行失败"))
             default:
                 let elapsed = Date().timeIntervalSince(startedAt)
-                phaseText = "第 \(attempt) 次轮询…（已等待 \(Int(elapsed))s）"
+                phaseText = L("第 {0} 次轮询…（已等待 {1}s）", String(attempt), String(Int(elapsed)))
                 phaseHint = elapsed >= Self.slowPollThreshold
-                    ? "AI 正在执行工具调用，可能需要 1-2 分钟"
+                    ? L("AI 正在执行工具调用，可能需要 1-2 分钟")
                     : ""
                 try await Task.sleep(nanoseconds: Self.pollIntervalNanoseconds)
             }
         }
 
-        throw ChatError.taskFailed("轮询超时：超过 \(Self.maxPollAttempts) 次（约 10 分钟）仍未拿到结果")
+        throw ChatError.taskFailed(
+            L("轮询超时：超过 {0} 次（约 10 分钟）仍未拿到结果", String(Self.maxPollAttempts))
+        )
     }
 
     private func handle(_ error: Error) {
@@ -344,7 +346,7 @@ final class ChatViewModel: ObservableObject {
         if let apiError = error as? APIError, case .transport = apiError,
            !session.backend.status.isRunning {
             errorMessage = nil
-            backendHint = "本地后端正在启动，连上后会自动刷新…"
+            backendHint = L("本地后端正在启动，连上后会自动刷新…")
             scheduleRetryWhenBackendReady()
             return
         }

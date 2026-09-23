@@ -18,13 +18,13 @@ final class BackendController: ObservableObject {
         var text: String {
             switch self {
             case .stopped:
-                return "未运行"
+                return L("未运行")
             case .starting:
-                return "启动中…"
+                return L("启动中…")
             case .running(let external):
-                return external ? "运行中（外部启动）" : "运行中"
+                return external ? L("运行中（外部启动）") : L("运行中")
             case .failed(let message):
-                return "启动失败：\(message)"
+                return L("启动失败：{0}", message)
             }
         }
     }
@@ -205,11 +205,11 @@ final class BackendController: ObservableObject {
             let scriptURL = directory.appendingPathComponent("main.py")
 
             guard fileManager.fileExists(atPath: scriptURL.path) else {
-                status = .failed("Bundle 里没有内嵌后端，也没在 \(directory.path) 里找到 main.py")
+                status = .failed(L("Bundle 里没有内嵌后端，也没在 {0} 里找到 main.py", directory.path))
                 return
             }
             guard fileManager.isExecutableFile(atPath: settings.pythonPath) else {
-                status = .failed("Python 解释器不可执行：\(settings.pythonPath)")
+                status = .failed(L("Python 解释器不可执行：{0}", settings.pythonPath))
                 return
             }
 
@@ -264,7 +264,7 @@ final class BackendController: ObservableObject {
                 if let current = self?.status, current.isRunning {
                     self?.status = .stopped
                 } else if case .starting? = self?.status {
-                    self?.status = .failed("进程启动后立即退出，请看下方日志")
+                    self?.status = .failed(L("进程启动后立即退出，请看下方日志"))
                 }
             }
         }
@@ -272,7 +272,7 @@ final class BackendController: ObservableObject {
         do {
             try task.run()
         } catch {
-            status = .failed("无法启动进程：\(error.localizedDescription)")
+            status = .failed(L("无法启动进程：{0}", error.localizedDescription))
             return
         }
 
@@ -537,13 +537,13 @@ final class BackendController: ObservableObject {
     var azureStatusText: String {
         switch azureState {
         case .ok where azureCredentialSource == "explicit":
-            return "已配置（环境变量）"
+            return L("已配置（环境变量）")
         case .ok:
-            return "已配置（az login 凭据）"
+            return L("已配置（az login 凭据）")
         case .probing:
-            return "检测中…"
+            return L("检测中…")
         case .missing:
-            return "未配置"
+            return L("未配置")
         }
     }
 
@@ -579,19 +579,21 @@ final class BackendController: ObservableObject {
                 return
             }
             if process == nil {
-                status = .failed("进程已退出，请查看下方日志")
+                status = .failed(L("进程已退出，请查看下方日志"))
                 return
             }
             try? await Task.sleep(nanoseconds: 500_000_000)
         }
-        status = .failed("后端 \(Int(timeout ?? Self.startupTimeout)) 秒内没有响应，请检查依赖与日志")
+        status = .failed(
+            L("后端 {0} 秒内没有响应，请检查依赖与日志", String(Int(timeout ?? Self.startupTimeout)))
+        )
     }
 
     // MARK: - 依赖检查
 
     func checkDependencies(settings: AppSettings) async -> String {
         guard FileManager.default.isExecutableFile(atPath: settings.pythonPath) else {
-            return "Python 解释器不可执行：\(settings.pythonPath)"
+            return L("Python 解释器不可执行：{0}", settings.pythonPath)
         }
 
         // 先确认解释器有 arm64 切片：本项目只跑原生 Apple Silicon，不用 Rosetta
@@ -628,7 +630,7 @@ final class BackendController: ObservableObject {
 
         let trimmed = output.trimmingCharacters(in: .whitespacesAndNewlines)
         if status == 0 {
-            return "依赖检查通过（原生 arm64）：\(trimmed)"
+            return L("依赖检查通过（原生 arm64）：{0}", trimmed)
         }
         return """
         依赖缺失（退出码 \(status)）：
@@ -668,7 +670,9 @@ final class BackendController: ObservableObject {
             do {
                 try task.run()
             } catch {
-                continuation.resume(returning: (127, "无法执行 \(executable)：\(error.localizedDescription)"))
+                continuation.resume(
+                    returning: (127, L("无法执行 {0}：{1}", executable, error.localizedDescription))
+                )
             }
         }
     }

@@ -25,11 +25,11 @@ final class KeychainStore {
             switch self {
             case .unexpectedStatus(let status):
                 if let message = SecCopyErrorMessageString(status, nil) as String? {
-                    return "Keychain 操作失败：\(message)（\(status)）"
+                    return L("Keychain 操作失败：{0}（{1}）", message, String(status))
                 }
-                return "Keychain 操作失败，状态码 \(status)"
+                return L("Keychain 操作失败，状态码 {0}", String(status))
             case .invalidData:
-                return "Keychain 中的数据无法解析"
+                return L("Keychain 中的数据无法解析")
             }
         }
     }

@@ -10,15 +10,15 @@ enum APIError: LocalizedError {
     var errorDescription: String? {
         switch self {
         case .invalidBaseURL(let value):
-            return "后端地址无效：\(value)"
+            return L("后端地址无效：{0}", value)
         case .http(let status, let message):
-            return "请求失败（HTTP \(status)）：\(message)"
+            return L("请求失败（HTTP {0}）：{1}", String(status), message)
         case .unauthorized:
-            return "登录已失效，请重新登录"
+            return L("登录已失效，请重新登录")
         case .decoding(let message):
-            return "解析响应失败：\(message)"
+            return L("解析响应失败：{0}", message)
         case .transport(let message):
-            return "无法连接本地后端：\(message)"
+            return L("无法连接本地后端：{0}", message)
         }
     }
 }
@@ -156,13 +156,13 @@ final class APIClient {
     ) async throws -> T {
         let data = try await sendRaw(path: path, method: method, body: body, authorized: authorized)
         if data.isEmpty {
-            throw APIError.decoding("响应为空")
+            throw APIError.decoding(L("响应为空"))
         }
         do {
             return try decoder.decode(T.self, from: data)
         } catch {
             let preview = String(data: data.prefix(200), encoding: .utf8) ?? ""
-            throw APIError.decoding("\(error.localizedDescription)｜原始响应：\(preview)")
+            throw APIError.decoding(L("{0}｜原始响应：{1}", error.localizedDescription, preview))
         }
     }
 
@@ -193,7 +193,7 @@ final class APIClient {
         }
 
         guard let http = response as? HTTPURLResponse else {
-            throw APIError.transport("响应类型异常")
+            throw APIError.transport(L("响应类型异常"))
         }
 
         guard (200..<300).contains(http.statusCode) else {
@@ -202,7 +202,7 @@ final class APIClient {
             }
             let message = (try? decoder.decode(APIErrorBody.self, from: data))?.error
                 ?? String(data: data.prefix(300), encoding: .utf8)
-                ?? "未知错误"
+                ?? L("未知错误")
             throw APIError.http(status: http.statusCode, message: message)
         }
 

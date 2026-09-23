@@ -17,13 +17,13 @@ final class FirstRunChecklist: ObservableObject {
 
         var title: String {
             switch self {
-            case .backend: return "后端进程"
-            case .python: return "Python 环境"
+            case .backend: return L("后端进程")
+            case .python: return L("Python 环境")
             case .provider: return "AI Provider"
-            case .azure: return "Azure 凭据"
-            case .meraki: return "Meraki 凭据"
-            case .nexusDashboard: return "Nexus Dashboard 凭据"
-            case .storage: return "存储"
+            case .azure: return L("Azure 凭据")
+            case .meraki: return L("Meraki 凭据")
+            case .nexusDashboard: return L("Nexus Dashboard 凭据")
+            case .storage: return L("存储")
             }
         }
 
@@ -102,7 +102,7 @@ final class FirstRunChecklist: ObservableObject {
     }
 
     func status(for item: Item) -> Status {
-        statuses[item] ?? .checking("检查中…")
+        statuses[item] ?? .checking(L("检查中…"))
     }
 
     // MARK: - 轮询
@@ -152,46 +152,46 @@ final class FirstRunChecklist: ObservableObject {
         var statuses: [Item: Status] = [:]
 
         statuses[.backend] = health.status == "ok"
-            ? .ok("已连接 \(session.settings.backendBaseURL)")
-            : .failed("后端状态异常：\(health.status)")
+            ? .ok(L("已连接 {0}", session.settings.backendBaseURL))
+            : .failed(L("后端状态异常：{0}", health.status))
 
         // 内嵌后端 → 不需要用户关心 Python；开发模式 → 显示真实版本
         if health.isEmbeddedBackend {
-            statuses[.python] = .ok("内嵌后端已就绪")
+            statuses[.python] = .ok(L("内嵌后端已就绪"))
         } else if let version = health.pythonVersion {
             statuses[.python] = .ok("Python \(version)")
         } else {
-            statuses[.python] = .ok("已就绪（后端未上报版本）")
+            statuses[.python] = .ok(L("已就绪（后端未上报版本）"))
         }
 
         let providers = health.configuredProviders
         if providers.isEmpty {
-            statuses[.provider] = .failed("未配置 API Key（当前是 mock 模式）")
+            statuses[.provider] = .failed(L("未配置 API Key（当前是 mock 模式）"))
         } else {
             let names = providers.map { AppSettings.displayName(for: $0) }.joined(separator: "、")
-            statuses[.provider] = .ok("已配置 \(names)")
+            statuses[.provider] = .ok(L("已配置 {0}", names))
         }
 
         statuses[.azure] = health.azure?.configured == true
-            ? .ok("已配置")
-            : .failed("未配置")
+            ? .ok(L("已配置"))
+            : .failed(L("未配置"))
         statuses[.meraki] = health.meraki?.configured == true
-            ? .ok("已配置")
-            : .failed("未配置")
+            ? .ok(L("已配置"))
+            : .failed(L("未配置"))
         // Nexus Dashboard 是可选工具：没配既不算失败也不算警告，不阻塞「可以登录了」
         statuses[.nexusDashboard] = health.nexusDashboard?.configured == true
-            ? .ok("已配置")
-            : .optional("未配置（可选，不影响其它工具）")
+            ? .ok(L("已配置"))
+            : .optional(L("未配置（可选，不影响其它工具）"))
 
         switch health.storageType?.lowercased() {
         case "sqlite":
-            statuses[.storage] = .ok("sqlite（重启保留历史）")
+            statuses[.storage] = .ok(L("sqlite（重启保留历史）"))
         case "memory":
-            statuses[.storage] = .warning("memory：重启会丢历史")
+            statuses[.storage] = .warning(L("memory：重启会丢历史"))
         case .some(let other):
-            statuses[.storage] = .warning("\(other)：重启可能丢历史")
+            statuses[.storage] = .warning(L("{0}：重启可能丢历史", other))
         case nil:
-            statuses[.storage] = .failed("后端未上报存储类型")
+            statuses[.storage] = .failed(L("后端未上报存储类型"))
         }
 
         self.statuses = statuses
@@ -201,13 +201,13 @@ final class FirstRunChecklist: ObservableObject {
 
     private func applyBackendOffline() {
         statuses = [
-            .backend: .failed("后端未运行"),
-            .python: .checking("等待后端"),
-            .provider: .checking("等待后端"),
-            .azure: .checking("等待后端"),
-            .meraki: .checking("等待后端"),
-            .nexusDashboard: .checking("等待后端"),
-            .storage: .checking("等待后端"),
+            .backend: .failed(L("后端未运行")),
+            .python: .checking(L("等待后端")),
+            .provider: .checking(L("等待后端")),
+            .azure: .checking(L("等待后端")),
+            .meraki: .checking(L("等待后端")),
+            .nexusDashboard: .checking(L("等待后端")),
+            .storage: .checking(L("等待后端")),
         ]
         isReady = false
         hasWarnings = false

@@ -70,7 +70,7 @@ final class ConnectionTester: ObservableObject {
         Task {
             await restartBackend()
             guard session.backend.status.isRunning else {
-                set(.failure("后端没起来：\(session.backend.status.text)"), for: target)
+                set(.failure(L("后端没起来：{0}", session.backend.status.text)), for: target)
                 return
             }
             await performRequest(target: target)
@@ -95,7 +95,7 @@ final class ConnectionTester: ObservableObject {
             try session.settings.persist()
             return true
         } catch {
-            set(.failure("保存凭据失败：\(error.localizedDescription)"), for: target)
+            set(.failure(L("保存凭据失败：{0}", error.localizedDescription)), for: target)
             return false
         }
     }
@@ -109,20 +109,20 @@ final class ConnectionTester: ObservableObject {
 
         if credentialsApplied {
             guard backend.status.isRunning else {
-                set(.needsRestart("后端未运行，需要先启动后端"), for: target)
+                set(.needsRestart(L("后端未运行，需要先启动后端")), for: target)
                 return
             }
         } else if mayRestartBackend {
             await restartBackend()
             guard session.backend.status.isRunning else {
-                set(.failure("后端重启失败：\(session.backend.status.text)"), for: target)
+                set(.failure(L("后端重启失败：{0}", session.backend.status.text)), for: target)
                 return
             }
         } else {
             let suffix = backend.isExternallyStarted
-                ? "（后端是外部启动的，建议在终端里重启）"
+                ? L("（后端是外部启动的，建议在终端里重启）")
                 : ""
-            set(.needsRestart("凭据已更新，需要重启后端生效" + suffix), for: target)
+            set(.needsRestart(L("凭据已更新，需要重启后端生效") + suffix), for: target)
             return
         }
 
@@ -148,11 +148,11 @@ final class ConnectionTester: ObservableObject {
 
             switch response.status {
             case "success":
-                set(.success(message: response.message ?? "连接成功", details: details), for: target)
+                set(.success(message: response.message ?? L("连接成功"), details: details), for: target)
             case "not_implemented":
-                set(.unavailable(response.message ?? "该目标暂不支持测试"), for: target)
+                set(.unavailable(response.message ?? L("该目标暂不支持测试")), for: target)
             default:
-                set(.failure(response.message ?? "连接失败"), for: target)
+                set(.failure(response.message ?? L("连接失败")), for: target)
             }
         } catch {
             set(.failure(error.localizedDescription), for: target)

@@ -1,5 +1,25 @@
 import SwiftUI
 
+/// 设置页的分区容器（替代 `GroupBox("标题") { ... }`）
+///
+/// macOS 上 `GroupBox` 的 String 标题用的是系统固定的小号字，既不跟随
+/// `.appFontScale(...)` 缩放，也比正文小：字号档位调大后标题反而比里面的
+/// 内容小一大截（例如「Azure 工具」「AI Provider」）。这里改用自定义
+/// label，让分区标题跟着全局字号走，并且**比正文更大**。
+struct SettingsSectionBox<Content: View>: View {
+    let title: String
+    @ViewBuilder var content: Content
+
+    var body: some View {
+        GroupBox {
+            content
+        } label: {
+            Text(title)
+                .appFont(.title3, weight: .semibold)
+        }
+    }
+}
+
 /// 「左侧标题 + 右侧控件」的一行设置项
 struct SettingRow<Content: View>: View {
     @Environment(\.appFontScale) private var fontScale
@@ -67,6 +87,8 @@ struct ConnectionTestResultView: View {
     let state: ConnectionTester.State
     let onRestart: () -> Void
 
+    @Environment(\.loc) private var loc
+
     var body: some View {
         switch state {
         case .idle:
@@ -74,7 +96,7 @@ struct ConnectionTestResultView: View {
         case .running:
             HStack(spacing: 6) {
                 ProgressView().controlSize(.small)
-                Text("测试中…")
+                Text(loc.t("测试中…"))
                     .appFont(.caption)
                     .foregroundStyle(.secondary)
             }
@@ -117,7 +139,7 @@ struct ConnectionTestResultView: View {
                 Text(message)
                     .appFont(.caption)
                     .foregroundStyle(.orange)
-                Button("一键重启并测试", action: onRestart)
+                Button(loc.t("一键重启并测试"), action: onRestart)
                     .appFont(.caption)
             }
         }
@@ -131,6 +153,8 @@ struct ConnectionTestButton: View {
     var systemImage: String? = nil
     let action: () -> Void
 
+    @Environment(\.loc) private var loc
+
     var body: some View {
         Button(action: action) {
             HStack(spacing: 5) {
@@ -139,7 +163,7 @@ struct ConnectionTestButton: View {
                 } else if let systemImage {
                     Image(systemName: systemImage)
                 }
-                Text(isRunning ? "测试中…" : title)
+                Text(isRunning ? loc.t("测试中…") : title)
             }
         }
         .disabled(isRunning)

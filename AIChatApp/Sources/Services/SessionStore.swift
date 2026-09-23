@@ -32,6 +32,11 @@ final class SessionStore: ObservableObject {
         backend.objectWillChange
             .sink { [weak self] in self?.objectWillChange.send() }
             .store(in: &cancellables)
+
+        // 设置变化（界面语言等）也要让 App 菜单 / 窗口标题跟着刷新
+        settings.objectWillChange
+            .sink { [weak self] in self?.objectWillChange.send() }
+            .store(in: &cancellables)
     }
 
     var isAuthenticated: Bool {
@@ -114,7 +119,7 @@ final class SessionStore: ObservableObject {
             let started = try await api.startGoogleLogin()
             guard let authorizationURL = URL(string: started.authorizationURL),
                   NSWorkspace.shared.open(authorizationURL) else {
-                throw APIError.transport("无法打开 Google 登录页面")
+                throw APIError.transport(L("无法打开 Google 登录页面"))
             }
 
             let deadline = Date().addingTimeInterval(TimeInterval(started.expiresIn))
@@ -124,7 +129,7 @@ final class SessionStore: ObservableObject {
                 switch result.status {
                 case "complete":
                     guard let newToken = result.token, !newToken.isEmpty else {
-                        throw APIError.decoding("Google 登录成功，但后端没有返回 JWT")
+                        throw APIError.decoding(L("Google 登录成功，但后端没有返回 JWT"))
                     }
                     token = newToken
                     api.token = newToken
@@ -133,16 +138,16 @@ final class SessionStore: ObservableObject {
                         settings.username = email
                         settings.persistQuietly()
                     }
-                    notice = "已使用 Google 账号登录"
+                    notice = L("已使用 Google 账号登录")
                     isLoggingIn = false
                     return
                 case "error":
-                    throw APIError.http(status: 401, message: result.error ?? "Google 登录失败")
+                    throw APIError.http(status: 401, message: result.error ?? L("Google 登录失败"))
                 default:
                     continue
                 }
             }
-            throw APIError.transport("Google 登录已超时，请重试")
+            throw APIError.transport(L("Google 登录已超时，请重试"))
         } catch {
             loginError = error.localizedDescription
         }
@@ -161,11 +166,11 @@ final class SessionStore: ObservableObject {
             let started = try await api.startGitHubLogin()
             NSPasteboard.general.clearContents()
             NSPasteboard.general.setString(started.userCode, forType: .string)
-            notice = "GitHub 验证码 \(started.userCode) 已复制，请在浏览器中粘贴"
+            notice = L("GitHub 验证码 {0} 已复制，请在浏览器中粘贴", started.userCode)
 
             guard let verificationURL = URL(string: started.verificationURI),
                   NSWorkspace.shared.open(verificationURL) else {
-                throw APIError.transport("无法打开 GitHub 登录页面")
+                throw APIError.transport(L("无法打开 GitHub 登录页面"))
             }
 
             let deadline = Date().addingTimeInterval(TimeInterval(started.expiresIn))
@@ -176,7 +181,7 @@ final class SessionStore: ObservableObject {
                 switch result.status {
                 case "complete":
                     guard let newToken = result.token, !newToken.isEmpty else {
-                        throw APIError.decoding("GitHub 登录成功，但后端没有返回 JWT")
+                        throw APIError.decoding(L("GitHub 登录成功，但后端没有返回 JWT"))
                     }
                     token = newToken
                     api.token = newToken
@@ -185,16 +190,16 @@ final class SessionStore: ObservableObject {
                         settings.username = identity
                         settings.persistQuietly()
                     }
-                    notice = "已使用 GitHub 账号登录"
+                    notice = L("已使用 GitHub 账号登录")
                     isLoggingIn = false
                     return
                 case "error":
-                    throw APIError.http(status: 401, message: result.error ?? "GitHub 登录失败")
+                    throw APIError.http(status: 401, message: result.error ?? L("GitHub 登录失败"))
                 default:
                     continue
                 }
             }
-            throw APIError.transport("GitHub 登录已超时，请重试")
+            throw APIError.transport(L("GitHub 登录已超时，请重试"))
         } catch {
             loginError = error.localizedDescription
         }
@@ -211,6 +216,6 @@ final class SessionStore: ObservableObject {
 
     /// 请求过程中发现 token 失效时调用
     func handleUnauthorized() {
-        logout(message: "登录状态已失效，请重新登录")
+        logout(message: L("登录状态已失效，请重新登录"))
     }
 }

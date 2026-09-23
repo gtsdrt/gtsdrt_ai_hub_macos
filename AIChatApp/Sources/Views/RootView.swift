@@ -4,6 +4,8 @@ struct RootView: View {
     @EnvironmentObject private var session: SessionStore
     /// 观察设置：字体档位变化时整棵树要跟着重排
     @ObservedObject private var settings: AppSettings
+    /// 界面语言变化时也要整棵树重排
+    @Environment(\.loc) private var loc
     /// 用 ⌘+ / ⌘− 调整字号时的临时提示
     @State private var fontScaleHUD: String?
     @State private var hudTask: Task<Void, Never>?
@@ -21,6 +23,7 @@ struct RootView: View {
             }
         }
         .appFontScale(CGFloat(settings.fontScale))
+        .appLanguage(settings.language)
         .frame(
             minWidth: CGFloat(900).appScaled(by: CGFloat(settings.fontScale)),
             minHeight: CGFloat(600).appScaled(by: CGFloat(settings.fontScale))
@@ -52,7 +55,7 @@ struct RootView: View {
     private func showFontScaleHUD(for scale: Double) {
         hudTask?.cancel()
         withAnimation(.easeInOut(duration: 0.15)) {
-            fontScaleHUD = "字体大小 \(Int((scale * 100).rounded()))%"
+            fontScaleHUD = loc.t("字体大小 {0}%", String(Int((scale * 100).rounded())))
         }
         hudTask = Task { @MainActor in
             try? await Task.sleep(nanoseconds: 1_200_000_000)
@@ -66,14 +69,15 @@ struct RootView: View {
 
 struct MainView: View {
     @EnvironmentObject private var session: SessionStore
+    @Environment(\.loc) private var loc
 
     var body: some View {
         TabView {
             ChatView(session: session)
-                .tabItem { Label("对话", systemImage: "bubble.left.and.bubble.right") }
+                .tabItem { Label(loc.t("对话"), systemImage: "bubble.left.and.bubble.right") }
 
             SettingsView(session: session)
-                .tabItem { Label("设置", systemImage: "gearshape") }
+                .tabItem { Label(loc.t("设置"), systemImage: "gearshape") }
         }
         .padding(.top, 6)
     }

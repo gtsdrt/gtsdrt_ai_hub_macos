@@ -21,6 +21,8 @@
   查 Cisco Nexus Dashboard 集群健康与 fabric/交换机清单（官方 Infra API + Manage API，只读）。
 - **密钥不出本机**：API Key 只存在本地 `.env` 与 macOS Keychain 中，客户端只与 `127.0.0.1` 通信。
 - **原生 Apple Silicon**：客户端与后端打包产物均为 arm64（不使用 Rosetta）。
+- **界面语言 / 字号**：设置页可切换 中文 / English / Norsk (bokmål)（立即生效，不用重启）；
+  字号用 ⌘+ / ⌘− / ⌘0 调整，分区标题跟着一起缩放。
 
 ---
 
