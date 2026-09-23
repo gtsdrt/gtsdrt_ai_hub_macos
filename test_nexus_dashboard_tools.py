@@ -354,9 +354,9 @@ class NdSchemaTests(NdToolTestBase):
     def test_19_registered_in_tool_registry(self) -> None:
         collected = {schema["function"]["name"] for schema in tools.default_schemas()}
         self.assertTrue(set(nd.TOOL_NAMES) <= collected)
-        # azure 21 + meraki 45 + nexus dashboard 31 + ai 1
-        self.assertEqual(len(tools.default_schemas()), 98)
-        self.assertEqual(len(tools.health()["tools"]), 98)
+        # azure 21 + meraki 45 + nexus dashboard 31 + container 3 + ai 1
+        self.assertEqual(len(tools.default_schemas()), 101)
+        self.assertEqual(len(tools.health()["tools"]), 101)
         self.assertEqual(len(tools.health()["groups"]["nexus_dashboard"]["tools"]), 31)
         self.assertEqual(tools.execute_tool("nexus_does_not_exist", {}), None)
 

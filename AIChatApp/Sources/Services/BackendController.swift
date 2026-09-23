@@ -45,6 +45,10 @@ final class BackendController: ObservableObject {
     @Published private(set) var merakiConfigured: Bool?
     /// Nexus Dashboard 工具凭据状态，来自 /api/health 的 nexus_dashboard
     @Published private(set) var ndConfigured: Bool?
+    /// 多容器注册表状态，来自 /api/health 的 container
+    @Published private(set) var containerConfigured: Bool?
+    /// 注册表里注册了几个容器
+    @Published private(set) var containerCount: Int = 0
     /// azure 的凭据来源：explicit / default_chain / missing
     @Published private(set) var azureCredentialSource: String?
     /// azure 探测失败原因（仅在 missing 时有值）
@@ -493,6 +497,8 @@ final class BackendController: ObservableObject {
             azureConfigured = health.azure?.configured
             merakiConfigured = health.meraki?.configured
             ndConfigured = health.nexusDashboard?.configured
+            containerConfigured = health.container?.configured
+            containerCount = health.container?.containerCount ?? 0
             azureCredentialSource = health.azure?.credentialSource
             azureProbeError = health.azure?.probeError
         }

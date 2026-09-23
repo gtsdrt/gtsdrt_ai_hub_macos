@@ -7,6 +7,7 @@ enum SettingsSection: String, Identifiable, Hashable, CaseIterable {
     case azure
     case meraki
     case nexusDashboard
+    case container
     case provider
     case login
     case log
@@ -20,6 +21,7 @@ enum SettingsSection: String, Identifiable, Hashable, CaseIterable {
         case .azure: return L("Azure 工具凭据")
         case .meraki: return L("Meraki 工具凭据")
         case .nexusDashboard: return L("Nexus Dashboard 工具凭据")
+        case .container: return L("Serverless 容器")
         case .provider: return "AI Provider"
         case .login: return L("登录")
         case .log: return L("后端日志")

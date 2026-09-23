@@ -192,8 +192,8 @@ def main() -> int:
         check("storage 有值", health.get("storage") in ("sqlite", "memory"), health.get("storage"))
         check("python.executable 指向打包产物", "backend_server" in str(health.get("python", {}).get("executable", "")), health.get("python"))
         registered = health.get("tools", {}).get("tools", [])
-        # azure 21 + meraki 45 + nexus dashboard 31 + ai 1 = 98
-        check("工具已注册（98 个）", len(registered) == 98, len(registered))
+        # azure 21 + meraki 45 + nexus dashboard 31 + container 3 + ai 1 = 101
+        check("工具已注册（101 个）", len(registered) == 101, len(registered))
         check(
             "关键工具都在列",
             {

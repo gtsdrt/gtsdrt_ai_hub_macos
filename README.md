@@ -7,7 +7,7 @@
 ```
 ┌───────────────────────────┐        HTTP (127.0.0.1:8000)        ┌──────────────────────────────┐
 │  macOS 客户端 (SwiftUI)    │ ──────────────────────────────────▶ │  FastAPI 后端 (main.py)       │
-│  AIChatApp.app            │ ◀────────────────────────────────── │  · 98 个运维工具              │
+│  AIChatApp.app            │ ◀────────────────────────────────── │  · 101 个运维工具             │
 │  · 登录 / 对话 / 设置       │      POST /api/chat_async + 轮询      │  · SQLite 会话持久化          │
 │  · 拉起来/停止本地后端       │                                     │  · JWT 鉴权 / Google / GitHub │
 └───────────────────────────┘                                     └───────────┬──────────────────┘
@@ -33,7 +33,7 @@
 👉 **[最新版 Releases](https://github.com/gtsdrt/gtsdrt_ai_hub_macos/releases/latest)** — 下载 `AIChatApp-<版本>.dmg`，把 App 拖进「应用程序」即可。
 
 - 系统要求：macOS 13+，**Apple Silicon（M 系列）**；Intel Mac 无法运行（本项目只发布 arm64）
-- 内嵌后端自带 98 个工具，**不需要**另行安装 Python 或依赖
+- 内嵌后端自带 101 个工具，**不需要**另行安装 Python 或依赖
 - **首次打开会被 Gatekeeper 拦截**（发布包是 ad-hoc 签名、未经 Apple 公证）：右键（或 Control + 点击）App → **打开** → 弹窗里再点一次「打开」；或执行
   `xattr -dr com.apple.quarantine /Applications/AIChatApp.app`
 - 建议用 Release 页面公布的 SHA-256 核对下载文件
@@ -52,6 +52,7 @@
 │   ├── azure_tools.py            #   21 个 Azure 工具 + 凭据探测
 │   ├── meraki_tools.py           #   45 个 Meraki 工具（直连 Dashboard REST API）
 │   ├── nexus_dashboard_tools.py  #   31 个 Nexus Dashboard 工具（官方 Infra + Manage API）
+│   ├── container_tools.py        #    3 个 Serverless 容器工具（多容器注册表，热加载）
 │   └── ai_tools.py               #   1 个 AI 工具（DeepSeek 余额查询）
 ├── function_app.py               # 【历史版本】原 Azure Functions 实现，仅作参考，不再被引用
 ├── requirements-fastapi.txt      # 后端依赖
@@ -139,13 +140,14 @@ AIChatApp/scripts/build_dmg.sh
 
 ---
 
-## 工具集（98 个）
+## 工具集（101 个）
 
 | 分组 | 数量 | 能力 |
 |---|---|---|
 | **Azure** | 21 | 订阅/资源组、VM 与 CPU 指标、VNet/子网/NSG 检查、Storage/Web/SQL/KeyVault/AKS/ACI 清点、KQL `query_resources`、监控指标与指标定义 |
 | **Meraki** | 45 | 组织/网络/设备、VPN 状态与站点、设备上联、Appliance（VLAN/端口/静态路由/防火墙 L3·L7/1:1 与 1:Many NAT/端口转发/入侵检测/内容过滤/流量整形）、交换机端口与镜像、无线 SSID/RF Profile |
 | **Nexus Dashboard** | 31 | 官方 Infra API（集群/节点/健康/容量/硬件/许可/租户/远端存储/审计/集成/通用设置）+ Manage API（fabric 汇总与状态、全局与按 fabric 的交换机、接口汇总、网络/VRF/租户、邻居交换机）；另有 `nexus_overview` 一次聚合集群信息 + 健康 + fabric + 交换机汇总。**全部只读** |
+| **Serverless 容器** | 3 | 多容器注册表（见下方「容器工具怎么配」）：`container_list_endpoints` 列出已注册容器、`container_list_tasks` 列出某容器的任务与可调用性、`container_run_task` 执行白名单任务。容器里能执行任意 playbook 的 `/run-ansible` **不开放**给模型 |
 | **AI** | 1 | DeepSeek 账户余额 |
 
 只有请求里带 `"enable_tools": true` 时才会把全部 schema 挂载给模型（默认 `false`，可用环境变量 `TOOLS_ENABLED_BY_DEFAULT` 改成默认开启）；工具循环最多 `MAX_TOOL_ITERATIONS`（默认 10）轮。
@@ -164,6 +166,63 @@ AIChatApp/scripts/build_dmg.sh
 > 端点路径按 Cisco 官方 OpenAPI 规范核对（Infra `https://<nd>/api/v1/infra`、Manage `https://<nd>/api/v1/manage`，4.3.1 版规范），
 > 且只注册了只读 `GET`，不包含任何创建/修改/删除/升级操作。
 
+### 容器工具怎么配（多容器注册表）
+
+容器（例如 [gtsdrt/Azure_ACR](https://github.com/gtsdrt/Azure_ACR)）的代码在 GitHub，
+由 GitHub Actions 构建镜像推到 ACR，再以 Serverless 容器（Azure Container Apps）运行。
+App 只是调用方，所以构建/部署跟本机没关系——**改代码 push 到 GitHub 就自动重新部署**。
+
+**注册表文件**（唯一配置来源，后端每次调用都重读 → 改完**立即生效，不用重启后端**）：
+
+```
+~/Library/Application Support/AIChatApp/containers.json      # 可用 AICHAT_CONTAINERS_FILE 改路径
+```
+
+```json
+{
+  "containers": [
+    {
+      "name": "ansible",
+      "url": "https://ansible-executor.xxx.norwayeast.azurecontainerapps.io",
+      "api_key": "...",                    // 或 "api_key_env": "ANSIBLE_EXECUTOR_API_KEY"
+      "mode": "auto",                      // auto（默认）/ list / all
+      "allowed_tasks": ["meraki_get_switch_ports"],
+      "timeout": 300,
+      "description": "执行 Ansible playbook 的容器"
+    }
+  ]
+}
+```
+
+| 字段 | 说明 |
+|---|---|
+| `name` | 容器名，模型用它指定容器（也是 `container_list_tasks` / `container_run_task` 的 `container` 参数） |
+| `url` | 容器 FQDN（Azure 门户 → Container App → 概述 → 应用程序 URL），只填主机、不要带 `/tasks` |
+| `api_key` / `api_key_env` | 容器要求的 `X-API-Key`；`api_key_env` 指向环境变量，密钥就不用落在文件里 |
+| `mode` | `auto`（默认）/ `list`（只信 `allowed_tasks`）/ `all`（不限制，危险） |
+| `allowed_tasks` | 白名单；写 `"*"` 等价于 `mode: all` |
+| `timeout` | 单次请求超时秒数，默认 300（ansible 任务可能跑几分钟） |
+
+**白名单判定（mode=auto，默认）**：`allowed_tasks` 里列出的放行 → 容器在 `GET /tasks` 里标了
+`read_only: true` 的任务自动放行 → 再回退到内置只读名单（`meraki_get_switch_ports` /
+`meraki_get_switch_port_statuses` / `meraki_get_firewall_rules`）。写操作默认一律拦住。
+
+**加一个新容器**：往 `containers.json` 里加一条 → 立刻可用（不用改代码、不用重启后端）。
+契约相同的容器（同样是 `/tasks` + `/run-task` + `X-API-Key`）直接复用；契约不同的容器
+需要新增工具模块（本模块只支持 `protocol: "azure-acr"`）。
+
+兼容旧写法：只配 `ANSIBLE_EXECUTOR_URL` + `ANSIBLE_EXECUTOR_API_KEY` 也可以，
+后端会把它当成一个名为 `ansible` 的条目；App 首次打开设置页时会自动迁移成注册表条目。
+
+其它：
+- App「设置 → Serverless 容器」里可以直接编辑注册表 JSON + 「测试连接」（后端 target=`container`，用 `GET /tasks` 做只读探测）。
+- 容器处于 `Stopped` 时调用会明确提示（`az containerapp start -n ansible-executor -g ai-api`）；
+  想让它在无请求时零成本，把 `minReplicas` 改成 `0`。
+
+> 只注册了 3 个工具：`container_list_endpoints` / `container_list_tasks` / `container_run_task`
+> （对应 `GET /tasks`、`POST /run-task`）。容器里那个能执行**任意** playbook 的 `POST /run-ansible`
+> 故意不暴露——它等价于容器内任意代码执行。
+
 ---
 
 ## API 一览
@@ -177,7 +236,7 @@ AIChatApp/scripts/build_dmg.sh
 | `POST` | `/api/auth/github/start` | 启动 GitHub Device Flow（返回 user_code） |
 | `GET` | `/api/auth/github/status` | 轮询设备授权状态 |
 | `GET` | `/api/health` | 健康检查：Python/架构、AI 配置、存储后端、Azure 凭据探测 |
-| `POST` | `/api/test_connection` | 测试 `azure` / `meraki` / `nexus_dashboard` / `deepseek` 连通性 |
+| `POST` | `/api/test_connection` | 测试 `azure` / `meraki` / `nexus_dashboard` / `container` / `deepseek` 连通性 |
 | `POST` | `/api/chat` | 同步对话（长请求，最大 360s） |
 | `POST` | `/api/chat_async` | 异步对话，立即返回 `instance_id`（202） |
 | `GET` | `/api/ai_task_status` | 轮询异步任务结果 |
@@ -209,7 +268,7 @@ AIChatApp/scripts/build_dmg.sh
 | `HOST` / `PORT` / `API_PREFIX` / `LOG_LEVEL` | 服务监听与日志 |
 | `AICHAT_DB_PATH` | 会话库位置，默认 `~/Library/Application Support/AIChatApp/aichat.db` |
 | `AI_MOCK_MODE` / `MAX_TOOL_ITERATIONS` / `TASK_TTL_HOURS` | 行为调优 |
-| `TOOLS_ENABLED_BY_DEFAULT` | 设为 `true` 时所有对话默认挂载 98 个工具（默认 `false`，按需在请求里开） |
+| `TOOLS_ENABLED_BY_DEFAULT` | 设为 `true` 时所有对话默认挂载 101 个工具（默认 `false`，按需在请求里开） |
 
 系统环境变量优先于 `.env`（已存在的变量不会被覆盖）。
 

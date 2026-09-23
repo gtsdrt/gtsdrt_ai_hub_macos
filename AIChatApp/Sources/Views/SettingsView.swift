@@ -54,6 +54,7 @@ struct SettingsView: View {
                     azureSection.id(SettingsSection.azure)
                     merakiSection.id(SettingsSection.meraki)
                     nexusDashboardSection.id(SettingsSection.nexusDashboard)
+                    containerSection.id(SettingsSection.container)
                     providerSection.id(SettingsSection.provider)
                     loginSection.id(SettingsSection.login)
                     logSection.id(SettingsSection.log)
@@ -89,6 +90,7 @@ struct SettingsView: View {
             settings.ndPassword,
             settings.ndLoginDomain,
             settings.ndVerifyTLS ? "tls-on" : "tls-off",
+            settings.containerRegistryJSON,
             settings.deepseekKey,
             settings.kimiKey,
             settings.defaultProvider,
@@ -488,6 +490,91 @@ struct SettingsView: View {
     }
 
     // MARK: - AI Provider
+
+    // MARK: - 多容器注册表
+
+    /// Serverless 容器：代码在 GitHub，由 GitHub Actions 构建镜像推到 ACR，
+    /// 以 Azure Container Apps 运行。注册表里加一条就多一个容器，
+    /// 后端每次调用都重读这个文件 —— 改完立即生效，不需要重启后端。
+    private var containerSection: some View {
+        SettingsSectionBox(title: loc.t("Serverless 容器（多容器注册表，后端热加载）")) {
+            VStack(alignment: .leading, spacing: 10) {
+                Text(loc.t("注册表文件：{0}", AppSettings.containerRegistryPath()))
+                    .appFont(.caption)
+                    .foregroundStyle(.secondary)
+
+                TextEditor(text: $settings.containerRegistryJSON)
+                    .font(.system(.body, design: .monospaced))
+                    .frame(minHeight: 190)
+                    .overlay(
+                        RoundedRectangle(cornerRadius: 6)
+                            .stroke(Color.secondary.opacity(0.3), lineWidth: 1)
+                    )
+
+                Text(loc.t("每条格式：name（容器名，模型用它指定）、url（容器 FQDN，不要带 /tasks）、api_key 或 api_key_env、可选 mode（auto/list/all）、allowed_tasks、timeout、description。mode=auto 时：allowed_tasks 里的放行；容器在 /tasks 里标了 read_only=true 的任务自动放行；其余回退内置只读名单。写操作请显式写进 allowed_tasks，或用 mode=all（危险）。"))
+                    .appFont(.caption)
+                    .foregroundStyle(.secondary)
+
+                HStack(spacing: 10) {
+                    Button(loc.t("保存注册表")) {
+                        do {
+                            try settings.saveContainerRegistry()
+                            settings.lastStatusMessage = loc.t("容器注册表已保存，立即生效（无需重启后端）")
+                        } catch {
+                            settings.lastStatusMessage = error.localizedDescription
+                        }
+                    }
+                    Button(loc.t("插入模板")) {
+                        settings.containerRegistryJSON = AppSettings.defaultContainerRegistryJSON(
+                            dotEnv: Self.readDotEnvForTemplate(settings: settings)
+                        )
+                    }
+                    ConnectionTestButton(
+                        title: loc.t("测试连接"),
+                        isRunning: tester.isRunning(ConnectionTester.Target.container)
+                    ) {
+                        tester.testHotReload(target: ConnectionTester.Target.container)
+                    }
+                }
+
+                Text(
+                    loc.t(
+                        "当前后端：{0}（{1} 个容器）",
+                        backend.containerConfigured == true
+                            ? loc.t("已检测到容器注册表")
+                            : loc.t("未检测到可用的容器"),
+                        String(backend.containerCount)
+                    )
+                )
+                    .appFont(.caption)
+                    .foregroundStyle(.secondary)
+
+                Text(loc.t("AI 只有 3 个容器工具：列出容器、列出某容器的任务、执行某容器里的白名单任务。容器里能执行任意 playbook 的 /run-ansible 故意不开放给 AI。"))
+                    .appFont(.caption)
+                    .foregroundStyle(.secondary)
+
+                ConnectionTestResultView(state: tester.state(for: ConnectionTester.Target.container)) {
+                    tester.restartBackendAndTest(target: ConnectionTester.Target.container)
+                }
+            }
+            .padding(6)
+        }
+    }
+
+    /// 只在「插入模板」时读一次 .env，用来把旧版 ANSIBLE_* 配置迁移进注册表
+    private static func readDotEnvForTemplate(settings: AppSettings) -> [String: String] {
+        let url = URL(fileURLWithPath: settings.projectDirectory).appendingPathComponent(".env")
+        guard let text = try? String(contentsOf: url, encoding: .utf8) else { return [:] }
+        var result: [String: String] = [:]
+        for raw in text.split(separator: "\n") {
+            let line = raw.trimmingCharacters(in: .whitespaces)
+            guard !line.isEmpty, !line.hasPrefix("#"), let eq = line.firstIndex(of: "=") else { continue }
+            let key = String(line[line.startIndex..<eq]).trimmingCharacters(in: .whitespaces)
+            let value = String(line[line.index(after: eq)...]).trimmingCharacters(in: .whitespaces)
+            if !key.isEmpty { result[key] = value }
+        }
+        return result
+    }
 
     private var providerSection: some View {
         SettingsSectionBox(title: loc.t("AI Provider（密钥存 Keychain，启动时传给 Python）")) {

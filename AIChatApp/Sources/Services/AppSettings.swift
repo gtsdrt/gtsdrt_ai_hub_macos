@@ -28,6 +28,7 @@ final class AppSettings: ObservableObject {
         static let ndUsername = "ndUsername"
         static let ndLoginDomain = "ndLoginDomain"
         static let ndVerifyTLS = "ndVerifyTLS"
+        static let containerRegistry = "containerRegistryJSON"
         /// 当前后端进程启动时用的凭据指纹
         static let appliedCredentialsFingerprint = "appliedCredentialsFingerprint"
         static let fontScale = "ui.fontScale"
@@ -108,6 +109,10 @@ final class AppSettings: ObservableObject {
     /// 是否校验 TLS 证书（Nexus Dashboard 多为自签证书，默认关闭）
     @Published var ndVerifyTLS: Bool
 
+    // 多容器注册表（Serverless 容器：代码在 GitHub，跑在 Azure Container Apps）
+    /// 注册表 JSON 文本（落盘到 App Support/containers.json，后端每次调用都重读 → 改完立即生效）
+    @Published var containerRegistryJSON: String
+
     @Published var lastStatusMessage: String?
 
     private let defaults = UserDefaults.standard
@@ -175,6 +180,9 @@ final class AppSettings: ObservableObject {
         ndVerifyTLS = defaults.object(forKey: DefaultsKey.ndVerifyTLS) as? Bool
             ?? Self.boolFromEnv(dotEnv["ND_VERIFY_TLS"])
 
+        // 注册表：优先用落盘文件（后端读的也是同一份）；没有落盘文件时用默认值/旧 .env 预填
+        containerRegistryJSON = Self.loadContainerRegistry(dotEnv: dotEnv)
+
         if pythonPath.isEmpty {
             pythonPath = Self.detectPythonPath(projectDirectory: projectPath)
         }
@@ -211,6 +219,9 @@ final class AppSettings: ObservableObject {
         defaults.set(ndUsername, forKey: DefaultsKey.ndUsername)
         defaults.set(ndLoginDomain, forKey: DefaultsKey.ndLoginDomain)
         defaults.set(ndVerifyTLS, forKey: DefaultsKey.ndVerifyTLS)
+        // 注册表落盘（后端每次调用都重读文件，所以改完不用重启后端）；
+        // JSON 非法时抛错、保留旧文件，不阻断其它设置的保存
+        try? saveContainerRegistry()
 
         try keychain.save(deepseekKey, for: KeychainStore.Keys.deepseekKey)
         try keychain.save(kimiKey, for: KeychainStore.Keys.kimiKey)
@@ -313,6 +324,8 @@ final class AppSettings: ObservableObject {
             "AZURE_CLIENT_SECRET": azureClientSecret,
             "AZURE_SUBSCRIPTION_ID": azureSubscriptionID,
             "MERAKI_API_KEY": merakiAPIKey,
+            // 注册表文件路径显式下发给后端，避免 App 与后端各自猜路径
+            "AICHAT_CONTAINERS_FILE": Self.containerRegistryPath(),
             "ND_BASE_URL": ndBaseURL,
             "ND_USERNAME": ndUsername,
             "ND_API_KEY": ndAPIKey,
@@ -330,6 +343,92 @@ final class AppSettings: ObservableObject {
             }
         }
         return result
+    }
+
+    // MARK: - 多容器注册表（Serverless 容器）
+
+    enum ContainerRegistryError: LocalizedError {
+        case invalidJSON
+
+        var errorDescription: String? {
+            L("注册表不是合法的 JSON，未保存（请检查引号/逗号）")
+        }
+    }
+
+    /// 注册表文件路径：必须与后端 tools/container_tools.py 的 registry_path() 默认值一致
+    nonisolated static func containerRegistryPath() -> String {
+        let base = FileManager.default.urls(for: .applicationSupportDirectory, in: .userDomainMask).first
+            ?? URL(fileURLWithPath: NSHomeDirectory()).appendingPathComponent("Library/Application Support")
+        return base.appendingPathComponent("AIChatApp/containers.json").path
+    }
+
+    /// 首次使用时的模板：.env 里若还有旧版单容器配置，顺手迁移成一条注册表条目
+    nonisolated static func defaultContainerRegistryJSON(dotEnv: [String: String] = [:]) -> String {
+        var containers: [[String: Any]] = []
+
+        let legacyURL = (dotEnv["ANSIBLE_EXECUTOR_URL"] ?? "").trimmingCharacters(in: .whitespaces)
+        if !legacyURL.isEmpty {
+            var entry: [String: Any] = [
+                "name": (dotEnv["ANSIBLE_EXECUTOR_NAME"].flatMap { $0.isEmpty ? nil : $0 }) ?? "ansible",
+                "url": legacyURL,
+                "description": "执行 Ansible playbook 的容器（Azure Container Apps）",
+            ]
+            // 密钥继续放在环境变量里（不落到注册表文件）
+            entry["api_key_env"] = "ANSIBLE_EXECUTOR_API_KEY"
+            let allowed = (dotEnv["ANSIBLE_ALLOWED_TASKS"] ?? "").trimmingCharacters(in: .whitespaces)
+            if !allowed.isEmpty && allowed != "*" {
+                entry["allowed_tasks"] = allowed
+            }
+            containers.append(entry)
+        }
+
+        let payload: [String: Any] = ["containers": containers]
+        guard
+            let data = try? JSONSerialization.data(
+                withJSONObject: payload,
+                options: [.prettyPrinted, .sortedKeys, .withoutEscapingSlashes]
+            ),
+            let text = String(data: data, encoding: .utf8)
+        else {
+            return "{\n  \"containers\": []\n}"
+        }
+        return text
+    }
+
+    /// 读注册表：落盘文件 > UserDefaults 草稿 > 由旧 .env 生成的模板
+    nonisolated static func loadContainerRegistry(dotEnv: [String: String]) -> String {
+        if let existing = try? String(contentsOfFile: containerRegistryPath(), encoding: .utf8),
+           !existing.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty {
+            return existing
+        }
+        if let draft = UserDefaults.standard.string(forKey: DefaultsKey.containerRegistry),
+           !draft.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty {
+            return draft
+        }
+        return defaultContainerRegistryJSON(dotEnv: dotEnv)
+    }
+
+    /// 校验 + 落盘（JSON 非法时抛错，旧文件保持不动）
+    func saveContainerRegistry() throws {
+        let text = containerRegistryJSON.trimmingCharacters(in: .whitespacesAndNewlines)
+        if !text.isEmpty {
+            guard
+                let data = text.data(using: .utf8),
+                (try? JSONSerialization.jsonObject(with: data, options: [])) != nil
+            else {
+                throw ContainerRegistryError.invalidJSON
+            }
+        }
+
+        let url = URL(fileURLWithPath: Self.containerRegistryPath())
+        try FileManager.default.createDirectory(
+            at: url.deletingLastPathComponent(),
+            withIntermediateDirectories: true
+        )
+        try text.write(to: url, atomically: true, encoding: .utf8)
+        // 注册表里可能直接写了 api_key，收紧权限到仅本人可读写
+        try? FileManager.default.setAttributes([.posixPermissions: 0o600], ofItemAtPath: url.path)
+        defaults.set(containerRegistryJSON, forKey: DefaultsKey.containerRegistry)
     }
 
     /// 写入/合并项目根目录的 .env，保留文件里其它配置行
@@ -445,6 +544,8 @@ final class AppSettings: ObservableObject {
             ndPassword,
             ndLoginDomain,
             ndVerifyTLS ? "tls-verify-on" : "tls-verify-off",
+            // 容器注册表是热加载的（后端每次调用都重读文件），故意不进指纹：
+            // 否则改一行注册表就会让所有其它凭据都变成「需要重启后端」。
             deepseekKey,
             kimiKey,
             openaiKey,

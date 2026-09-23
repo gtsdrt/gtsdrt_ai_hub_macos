@@ -13,6 +13,8 @@ final class ConnectionTester: ObservableObject {
         static let meraki = "meraki"
         /// 后端 /api/test_connection 的 target 名
         static let nexusDashboard = "nexus_dashboard"
+        /// 多容器注册表（GitHub 上的容器代码，跑在 Azure Container Apps）
+        static let container = "container"
     }
 
     enum State: Equatable {
@@ -71,6 +73,23 @@ final class ConnectionTester: ObservableObject {
             await restartBackend()
             guard session.backend.status.isRunning else {
                 set(.failure(L("后端没起来：{0}", session.backend.status.text)), for: target)
+                return
+            }
+            await performRequest(target: target)
+        }
+    }
+
+    /// 热加载目标的测试：注册表是后端每次调用时重读文件的，改完立即生效，
+    /// 所以这里不做「凭据是否已应用到后端进程」的判断，也不要求重启。
+    func testHotReload(target: String) {
+        guard !isRunning(target) else { return }
+
+        guard persistCurrentCredentials(target: target) else { return }
+
+        set(.running, for: target)
+        Task {
+            guard session.backend.status.isRunning else {
+                set(.needsRestart(L("后端未运行，需要先启动后端")), for: target)
                 return
             }
             await performRequest(target: target)

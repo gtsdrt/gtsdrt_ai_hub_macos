@@ -192,7 +192,7 @@ if BASE_DIR not in sys.path:
     sys.path.insert(0, BASE_DIR)
 
 import tools as tool_registry  # noqa: E402  （必须在 sys.path 处理之后导入）
-from tools import ai_tools, azure_tools, meraki_tools, nexus_dashboard_tools  # noqa: E402
+from tools import ai_tools, azure_tools, container_tools, meraki_tools, nexus_dashboard_tools  # noqa: E402
 
 # 模块加载时刻，用于 /api/health 的 uptime_seconds
 PROCESS_STARTED_AT = time.time()
@@ -1665,7 +1665,7 @@ def _run_chat_task(instance_id: str, payload: dict) -> None:
 #    直接调用工具、不走 AI 循环，所以不消耗 token；每次都实时打网络，不用任何缓存。
 # ============================================================
 
-CONNECTION_TARGETS = ("azure", "meraki", "nexus_dashboard", "deepseek", "kimi", "openai")
+CONNECTION_TARGETS = ("azure", "meraki", "nexus_dashboard", "container", "deepseek", "kimi", "openai")
 
 
 def _shorten_connection_error(message: Any, limit: int = TEST_CONNECTION_ERROR_CHARS) -> str:
@@ -1684,6 +1684,9 @@ def _tool_call_for_target(target: str) -> str:
         return meraki_tools.meraki_list_organizations({})
     if target == "nexus_dashboard":
         return nexus_dashboard_tools.nexus_infra_about({})
+    if target in ("container", "ansible"):
+        # 只读探测：拉一次注册表里第一个容器的任务清单，够验证「注册表 + 地址 + API Key + 容器活着」
+        return container_tools.container_list_tasks({})
     if target == "deepseek":
         return ai_tools.deepseek_get_balance({})
     if target == "openai":
@@ -1809,6 +1812,25 @@ def _summarize_balance(payload: dict) -> tuple[str, list]:
     return "连接成功，DeepSeek 接口可访问", details
 
 
+def _summarize_container_tasks(payload: dict) -> tuple[str, list]:
+    """container_list_tasks 的返回：容器里有多少任务 + 其中多少对 AI 开放"""
+    container = payload.get("container") or "容器"
+    tasks = payload.get("tasks") if isinstance(payload.get("tasks"), dict) else {}
+    count = payload.get("count", len(tasks))
+    callable_count = payload.get("callable_count")
+    details = [
+        {"name": name, "state": "可调用" if meta.get("callable_by_ai") else "未放开"}
+        for name, meta in tasks.items()
+        if isinstance(meta, dict)
+    ][:TEST_CONNECTION_DETAIL_LIMIT]
+
+    if not tasks:
+        return f"连接成功，{container} 没有返回任何内置任务", details
+    if isinstance(callable_count, int) and callable_count < count:
+        return f"连接成功，{container} 内 {count} 个任务（{callable_count} 个已对 AI 开放）", details
+    return f"连接成功，{container} 内 {count} 个任务，均已对 AI 开放", details
+
+
 def _summarize_connection(target: str, payload: dict) -> tuple[str, list]:
     if target == "azure":
         return _summarize_subscriptions(payload)
@@ -1816,6 +1838,8 @@ def _summarize_connection(target: str, payload: dict) -> tuple[str, list]:
         return _summarize_organizations(payload)
     if target == "nexus_dashboard":
         return _summarize_nexus_dashboard(payload)
+    if target in ("container", "ansible"):
+        return _summarize_container_tasks(payload)
     if target == "openai":
         return _summarize_openai_models(payload)
     return _summarize_balance(payload)
@@ -2291,6 +2315,7 @@ async def health() -> JSONResponse:
         "azure": azure_tools.health_with_probe(azure_probe),
         "meraki": tool_registry.MODULES["meraki"].health(),
         "nexus_dashboard": tool_registry.MODULES["nexus_dashboard"].health(),
+        "container": tool_registry.MODULES["container"].health(),
         "tools": {
             **tool_registry.health(),
             "enabled_by_default": TOOLS_ENABLED_BY_DEFAULT,

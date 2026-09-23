@@ -280,6 +280,7 @@ struct HealthResponse: Decodable {
     let azure: ToolGroupStatus?
     let meraki: ToolGroupStatus?
     let nexusDashboard: ToolGroupStatus?
+    let container: ToolGroupStatus?
     /// 以下三个字段是较新的 /api/health 才有的，旧后端没有
     let deepseek: ToolGroupStatus?
     let kimi: ToolGroupStatus?
@@ -293,6 +294,7 @@ struct HealthResponse: Decodable {
         case azure
         case meraki
         case nexusDashboard = "nexus_dashboard"
+        case container
         case deepseek
         case kimi
         case python
@@ -361,6 +363,8 @@ struct ToolGroupStatus: Decodable {
     let configured: Bool?
     let credential: String?
     let hint: String?
+    /// 多容器注册表才有：注册了几个容器
+    let containerCount: Int?
     /// explicit（环境变量）/ default_chain（az login、托管身份等）/ probing（后台检测中）/ missing
     let credentialSource: String?
     /// 探测失败原因（仅在 missing 时有值）
@@ -370,6 +374,7 @@ struct ToolGroupStatus: Decodable {
         case configured
         case credential
         case hint
+        case containerCount = "container_count"
         case credentialSource = "credential_source"
         case probeError = "probe_error"
     }

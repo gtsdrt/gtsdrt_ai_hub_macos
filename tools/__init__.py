@@ -14,19 +14,21 @@ from __future__ import annotations
 
 from typing import Optional
 
-from . import ai_tools, azure_tools, meraki_tools, nexus_dashboard_tools
+from . import ai_tools, azure_tools, container_tools, meraki_tools, nexus_dashboard_tools
 
 # 分组顺序决定 schema 顺序：Azure 在前，AI Provider 在最后
 MODULES = {
     "azure": azure_tools,
     "meraki": meraki_tools,
     "nexus_dashboard": nexus_dashboard_tools,
+    # 多容器注册表：注册表里加一行就能接一个新容器，不用改代码
+    "container": container_tools,
     "ai": ai_tools,
 }
 
 
 def default_schemas() -> list[dict]:
-    """默认挂载的全部工具 schema（Azure 21 + Meraki 45 + Nexus Dashboard 31 + AI 1，共 98 个）"""
+    """默认挂载的全部工具 schema（Azure 21 + Meraki 45 + Nexus Dashboard 31 + 容器 3 + AI 1，共 101 个）"""
     schemas: list[dict] = []
     for module in MODULES.values():
         schemas.extend(module.SCHEMAS)
