@@ -150,7 +150,16 @@ AIChatApp/scripts/build_dmg.sh
 | **Serverless 容器** | 3 | 多容器注册表（见下方「容器工具怎么配」）：`container_list_endpoints` 列出已注册容器、`container_list_tasks` 列出某容器的任务与可调用性、`container_run_task` 执行白名单任务。容器里能执行任意 playbook 的 `/run-ansible` **不开放**给模型 |
 | **AI** | 1 | DeepSeek 账户余额 |
 
-只有请求里带 `"enable_tools": true` 时才会把全部 schema 挂载给模型（默认 `false`，可用环境变量 `TOOLS_ENABLED_BY_DEFAULT` 改成默认开启）；工具循环最多 `MAX_TOOL_ITERATIONS`（默认 10）轮。
+只有请求里带 `"enable_tools": true` 时才会把全部 schema 挂载给模型（默认 `false`，可用环境变量 `TOOLS_ENABLED_BY_DEFAULT` 改成默认开启）；工具循环最多 `MAX_TOOL_ITERATIONS`（默认 15）轮，可用请求体里的 `max_tool_iterations` 按次覆盖。
+
+**工具循环停不下来时会优雅收尾，而不是报错**：
+
+- 达到轮次上限（`MAX_TOOL_ITERATIONS`）或同一个「工具 + 参数」被反复调用（`MAX_IDENTICAL_TOOL_CALLS`，默认 2 次后不再执行）时，
+  后端会再发一次**不带工具**的请求，让模型基于已有结果给出最终答案；
+- 若这次收尾请求也失败，就退化成工具结果摘要，保证用户至少能看到「查到了什么、卡在哪一步」；
+- 同一个工具连续失败 `MAX_TOOL_ERRORS_BEFORE_NOTICE`（默认 3）次后，工具结果里会追加一句「别再重试它」的提示，减少模型在同一个坑里刷轮次；
+- 响应的 `stop_reason` 会标明收尾原因：`completed` / `iteration_limit` / `repeated_tool_calls`；
+- 同一轮里完全相同的工具调用只执行一次（结果复用），省时间也省 token。
 
 ### Nexus Dashboard 工具怎么配
 
@@ -278,7 +287,7 @@ App 只是调用方，所以构建/部署跟本机没关系——**改代码 pus
 | `ND_VERIFY_TLS` | 默认 `false`（Nexus Dashboard 出厂多为自签证书，等同官方示例的 `--insecure`） |
 | `HOST` / `PORT` / `API_PREFIX` / `LOG_LEVEL` | 服务监听与日志 |
 | `AICHAT_DB_PATH` | 会话库位置，默认 `~/Library/Application Support/AIChatApp/aichat.db` |
-| `AI_MOCK_MODE` / `MAX_TOOL_ITERATIONS` / `TASK_TTL_HOURS` | 行为调优 |
+| `AI_MOCK_MODE` / `MAX_TOOL_ITERATIONS` / `MAX_IDENTICAL_TOOL_CALLS` / `TASK_TTL_HOURS` | 行为调优（工具循环上限与防死循环） |
 | `TOOLS_ENABLED_BY_DEFAULT` | 设为 `true` 时所有对话默认挂载 101 个工具（默认 `false`，按需在请求里开） |
 
 系统环境变量优先于 `.env`（已存在的变量不会被覆盖）。

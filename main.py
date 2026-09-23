@@ -1195,7 +1195,11 @@ def build_chat_messages(req_body: dict, conversation_id: str) -> tuple[Optional[
 # 6. AI 调用层（openai SDK）
 # ============================================================
 
-MAX_TOOL_ITERATIONS = int(os.environ.get("MAX_TOOL_ITERATIONS", 10))
+MAX_TOOL_ITERATIONS = int(os.environ.get("MAX_TOOL_ITERATIONS", 15))
+# 同一个 (工具, 参数) 最多重复执行几次；超过就不再执行并收尾（防止模型死循环刷同一调用）
+MAX_IDENTICAL_TOOL_CALLS = int(os.environ.get("MAX_IDENTICAL_TOOL_CALLS", 2))
+# 同一个工具连续失败几次后，在工具结果里追加「别再用它了」的提示（模型爱吃回头草）
+MAX_TOOL_ERRORS_BEFORE_NOTICE = int(os.environ.get("MAX_TOOL_ERRORS_BEFORE_NOTICE", 3))
 # 单个工具结果注入上下文的最大字符数（防止一次性拉回几千台设备把上下文撑爆）
 MAX_TOOL_RESULT_CHARS = int(os.environ.get("MAX_TOOL_RESULT_CHARS", 20000))
 # 返回给前端的 result_preview 截断长度（严格截断，避免大结果撑爆前端）
@@ -1411,6 +1415,85 @@ def _tool_result_preview(result: Any, limit: int = TOOL_RESULT_PREVIEW_CHARS) ->
     return text[:limit]
 
 
+# ---------------------------------------------------------------- 工具循环收尾
+# 设计原则：达到轮次上限 / 模型反复刷同一个调用时，**不要**把已经做过的活全丢掉抛异常，
+# 而是再做一次「不带工具」的收尾调用，把已有信息整理成最终答案；实在不行就退化成工具结果摘要。
+
+
+def _tool_call_signature(name: str, arguments: dict) -> str:
+    """(工具名 + 规范化参数) 作为「同一个调用」的判据"""
+    try:
+        payload = json.dumps(arguments or {}, sort_keys=True, ensure_ascii=False)
+    except (TypeError, ValueError):
+        payload = str(arguments)
+    return name + ":" + payload
+
+
+def _iteration_exhausted_notice(limit: int, reason: str) -> str:
+    if reason == "repeated_tool_calls":
+        head = "系统提示：检测到你反复调用同一个工具（相同参数）且没有新进展，已经停止继续执行工具。"
+    else:
+        head = f"系统提示：已达到工具调用上限（{limit} 轮），不再继续调用工具。"
+    return (
+        head
+        + "\n请立刻基于上面已经获得的工具结果给出最终答案；"
+        "如果信息仍然不足，请明确说明「已经查到什么、还缺什么、建议用户下一步怎么做」，"
+        "不要再说「我将要调用某工具」。"
+    )
+
+
+def _fallback_tool_summary(tool_calls_log: list, limit: int, reason: str) -> str:
+    """收尾调用也失败时的兜底：把工具结果摘出来，至少让用户看到进展"""
+    if reason == "repeated_tool_calls":
+        head = "同一个工具被反复调用且没有新进展，已停止继续执行工具。"
+    else:
+        head = f"已达到工具调用上限（{limit} 轮），未能生成归纳后的最终答案。"
+
+    lines = [head, "", f"本轮共执行 {len(tool_calls_log)} 次工具调用，最近的记录："]
+    for entry in tool_calls_log[-8:]:
+        lines.append(
+            "- 第{it}轮 {name}（{status}）：{preview}".format(
+                it=entry.get("iteration"),
+                name=entry.get("tool_name"),
+                status=entry.get("result_status"),
+                preview=str(entry.get("result_preview") or "")[:200].replace("\n", " "),
+            )
+        )
+    lines.append("")
+    lines.append("如果还需要继续排查，可以缩小问题范围后重新提问（例如指定具体设备/资源名）。")
+    return "\n".join(lines)
+
+
+def _finalize_without_tools(
+    client,
+    request_kwargs: dict,
+    messages: list,
+    limit: int,
+    reason: str,
+    provider: str,
+    model: str,
+) -> Optional[str]:
+    """最后再问一次模型，但**不带工具**，让它基于已有结果收尾；失败返回 None（由调用方兜底）"""
+    try:
+        final_kwargs = {
+            key: value for key, value in request_kwargs.items()
+            if key not in ("tools", "tool_choice")
+        }
+        final_kwargs["messages"] = list(messages) + [
+            {"role": "user", "content": _iteration_exhausted_notice(limit, reason)}
+        ]
+        response = client.chat.completions.create(**final_kwargs)
+        if getattr(response, "usage", None):
+            _record_usage(provider, model, response.usage)
+        content = response.choices[0].message.content or ""
+        if content.strip():
+            logger.info("[AI] 收尾调用成功（reason=%s），长度=%s", reason, len(content))
+            return content
+    except Exception as exc:
+        logger.warning("[AI] 收尾调用失败（reason=%s）：%s: %s", reason, type(exc).__name__, exc)
+    return None
+
+
 def run_ai_with_tools(
     messages: list,
     subscription_id: Optional[str] = None,
@@ -1418,6 +1501,7 @@ def run_ai_with_tools(
     tools: Any = None,
     model: Optional[str] = None,
     temperature: Optional[float] = None,
+    max_iterations: Optional[int] = None,
 ) -> dict:
     """
     执行一次 AI 对话，返回：
@@ -1426,12 +1510,19 @@ def run_ai_with_tools(
           "tool_calls_log": [ {iteration, tool_name, arguments, result_preview,
                                result_status, duration_ms}, ... ],
           "iterations_used": 2,      # 实际发生的模型调用轮数（mock 模式下是 0）
+          "stop_reason": "completed", # completed / iteration_limit / repeated_tool_calls
         }
 
     - 未配置 Key（AI_MOCK_MODE=auto）时返回 mock 回复，方便前端联调；
     - 配置了 Key 时走 openai SDK 的真实请求；
     - tools="default" 时挂载 tools/ 包里的默认工具集，并进入多轮工具调用循环；
       调用方也可以直接传 schema 列表；subscription_id 会自动注入工具参数。
+    - 工具循环的两种「停不下来」都会优雅收尾而不是报错：
+        · 达到轮次上限（默认 MAX_TOOL_ITERATIONS=10，可用请求字段 max_tool_iterations 覆盖）
+        · 同一个 (工具, 参数) 被反复调用（默认 MAX_IDENTICAL_TOOL_CALLS=2 次后不再执行）
+      收尾时会再发一次**不带工具**的请求，让模型基于已有结果给出最终答案；
+      如果这次也失败，就退化成工具结果摘要，保证用户至少能看到进展。
+    - 同一轮里完全相同的工具调用只执行一次，结果复用（省时间也省 token）。
     - 只要文本回复时用 run_ai_with_tools_text()。
     """
     provider = _normalize_provider(ai_provider)
@@ -1474,10 +1565,22 @@ def run_ai_with_tools(
     if temperature is not None:
         request_kwargs["temperature"] = temperature
 
-    max_iterations = MAX_TOOL_ITERATIONS if tool_list else 1
-    logger.info("[AI] 调用 provider=%s model=%s 消息数=%s", provider, model, len(messages))
+    limit = MAX_TOOL_ITERATIONS if tool_list else 1
+    if tool_list and max_iterations:
+        try:
+            limit = max(1, min(int(max_iterations), 50))
+        except (TypeError, ValueError):
+            pass
+    logger.info("[AI] 调用 provider=%s model=%s 消息数=%s（工具轮次上限 %s）", provider, model, len(messages), limit)
 
-    for iteration in range(max_iterations):
+    # 同一 (工具, 参数) 的执行次数；超过 MAX_IDENTICAL_TOOL_CALLS 就不再执行并收尾
+    executed_signatures: dict[str, int] = {}
+    tool_error_counts: dict[str, int] = {}
+    stop_reason: Optional[str] = None
+    rounds_used = 0
+
+    for iteration in range(limit):
+        rounds_used = iteration + 1
         response = client.chat.completions.create(**request_kwargs)
 
         if getattr(response, "usage", None):
@@ -1494,6 +1597,8 @@ def run_ai_with_tools(
                 {"role": "assistant", "content": message.content, "tool_calls": message.tool_calls}
             )
 
+            # 同一轮里完全相同的调用只执行一次（结果复用），既省时间也省 token
+            round_cache: dict[str, str] = {}
             for tool_call in message.tool_calls:
                 try:
                     tool_args = json.loads(tool_call.function.arguments or "{}")
@@ -1502,10 +1607,60 @@ def run_ai_with_tools(
                 if subscription_id and "subscription_id" not in tool_args:
                     tool_args["subscription_id"] = subscription_id
 
+                signature = _tool_call_signature(tool_call.function.name, tool_args)
+
+                # 跨轮重复：同一个调用已经跑够次数，就不再执行，直接告知模型并准备收尾
+                if executed_signatures.get(signature, 0) >= MAX_IDENTICAL_TOOL_CALLS:
+                    stop_reason = "repeated_tool_calls"
+                    repeated_result = json.dumps({
+                        "status": "skipped",
+                        "message": (
+                            f"同一个工具调用（{tool_call.function.name}）已重复执行 "
+                            f"{executed_signatures[signature]} 次且结果相同，系统不再执行。"
+                            "请改用其它方式或直接基于已有结果作答。"
+                        ),
+                    }, ensure_ascii=False)
+                    tool_calls_log.append({
+                        "iteration": iteration + 1,
+                        "tool_name": tool_call.function.name,
+                        "arguments": tool_args,
+                        "result_preview": _tool_result_preview(repeated_result),
+                        "result_status": "skipped",
+                        "duration_ms": 0,
+                    })
+                    messages.append({
+                        "role": "tool",
+                        "tool_call_id": tool_call.id,
+                        "name": tool_call.function.name,
+                        "content": repeated_result,
+                    })
+                    continue
+
+                if signature in round_cache:  # 本轮已执行过同样的调用
+                    tool_result = round_cache[signature]
+                    tool_calls_log.append({
+                        "iteration": iteration + 1,
+                        "tool_name": tool_call.function.name,
+                        "arguments": tool_args,
+                        "result_preview": _tool_result_preview(tool_result),
+                        "result_status": _tool_result_status(tool_result),
+                        "duration_ms": 0,
+                        "deduplicated": True,
+                    })
+                    messages.append({
+                        "role": "tool",
+                        "tool_call_id": tool_call.id,
+                        "name": tool_call.function.name,
+                        "content": tool_result,
+                    })
+                    continue
+
                 # 记录工具调用（含耗时），result_preview 严格截断
                 started_at = time.perf_counter()
                 tool_result = _execute_tool(tool_call.function.name, tool_args)
                 duration_ms = int((time.perf_counter() - started_at) * 1000)
+                round_cache[signature] = tool_result
+                executed_signatures[signature] = executed_signatures.get(signature, 0) + 1
 
                 result_status = _tool_result_status(tool_result)
                 tool_calls_log.append({
@@ -1521,21 +1676,60 @@ def run_ai_with_tools(
                     iteration + 1, tool_call.function.name, result_status, duration_ms,
                 )
 
+                # 同一个工具连续失败多次时，给模型一句「别再试了」，避免它把 10 轮全刷在同一个坑里
+                tool_content = tool_result
+                if result_status == "error":
+                    failed = tool_error_counts.get(tool_call.function.name, 0) + 1
+                    tool_error_counts[tool_call.function.name] = failed
+                    if failed >= MAX_TOOL_ERRORS_BEFORE_NOTICE:
+                        tool_content = (
+                            tool_result
+                            + "\n\n[系统提示] 工具 "
+                            + tool_call.function.name
+                            + " 已连续失败 "
+                            + str(failed)
+                            + " 次。请不要再重试它（或它的相同/相似调用），"
+                            "改用其它工具，或直接用已有信息回答用户并说明失败原因。"
+                        )
+                else:
+                    tool_error_counts.pop(tool_call.function.name, None)
+
                 messages.append({
                     "role": "tool",
                     "tool_call_id": tool_call.id,
                     "name": tool_call.function.name,
-                    "content": tool_result,
+                    "content": tool_content,
                 })
+
+            if stop_reason:
+                break
             continue
 
         return {
             "response": message.content or "",
             "tool_calls_log": tool_calls_log,
             "iterations_used": iteration + 1,
+            "stop_reason": "completed",
         }
 
-    raise RuntimeError(f"工具调用超过最大轮次（{MAX_TOOL_ITERATIONS}）")
+    # 走完所有轮次 / 主动停止：做一次「不带工具」的收尾调用，把已有信息整理成答案
+    reason = stop_reason or "iteration_limit"
+    logger.warning(
+        "[AI] 工具循环收尾：reason=%s limit=%s 已执行 %s 次工具调用",
+        reason, limit, len(tool_calls_log),
+    )
+    final_text = _finalize_without_tools(
+        client, request_kwargs, messages, limit, reason, provider, model
+    )
+    if not final_text:
+        final_text = _fallback_tool_summary(tool_calls_log, limit, reason)
+
+    return {
+        "response": final_text,
+        "tool_calls_log": tool_calls_log,
+        "iterations_used": rounds_used or limit,
+        "stop_reason": reason,
+    }
 
 
 def run_ai_with_tools_text(
@@ -1606,11 +1800,13 @@ def _run_chat_task(instance_id: str, payload: dict) -> None:
             tools=(payload.get("tools") or "default") if enable_tools else None,
             model=payload.get("model"),
             temperature=payload.get("temperature"),
+            max_iterations=payload.get("max_tool_iterations"),
         )
         result = outcome
         final_content = result["response"]
         tool_calls_log = result["tool_calls_log"]
         iterations_used = result["iterations_used"]
+        stop_reason = result.get("stop_reason", "completed")
 
         # 助手消息连同工具调用日志一起落库，前端从历史里也能看到
         messages.append({
@@ -1630,14 +1826,15 @@ def _run_chat_task(instance_id: str, payload: dict) -> None:
                 "response": final_content,
                 "tool_calls_log": tool_calls_log,
                 "iterations_used": iterations_used,
+                "stop_reason": stop_reason,
                 "tools_enabled": enable_tools,
                 "conversation_id": conversation_id,
                 "instance_id": instance_id,
             },
         )
         logger.info(
-            "[ChatTask] %s 完成，回复长度=%s，工具调用 %s 次，模型轮数 %s",
-            instance_id, len(final_content or ""), len(tool_calls_log), iterations_used,
+            "[ChatTask] %s 完成，回复长度=%s，工具调用 %s 次，模型轮数 %s，收尾原因 %s",
+            instance_id, len(final_content or ""), len(tool_calls_log), iterations_used, stop_reason,
         )
 
         if webhook_url:
@@ -2319,6 +2516,9 @@ async def health() -> JSONResponse:
         "tools": {
             **tool_registry.health(),
             "enabled_by_default": TOOLS_ENABLED_BY_DEFAULT,
+            # 工具循环的收尾策略（前端/文档用）
+            "max_tool_iterations": MAX_TOOL_ITERATIONS,
+            "max_identical_tool_calls": MAX_IDENTICAL_TOOL_CALLS,
         },
         "usage": usage_summary(),
     })
@@ -2432,6 +2632,7 @@ def general_chat(payload: ChatRequest, _: None = Depends(require_auth)) -> JSONR
             tools=(data.get("tools") or "default") if enable_tools else None,
             model=data.get("model"),
             temperature=data.get("temperature"),
+            max_iterations=data.get("max_tool_iterations"),
         )
         result = outcome
         final_content = result["response"]
@@ -2457,6 +2658,7 @@ def general_chat(payload: ChatRequest, _: None = Depends(require_auth)) -> JSONR
         "response": final_content,
         "tool_calls_log": tool_calls_log,
         "iterations_used": iterations_used,
+        "stop_reason": result.get("stop_reason", "completed"),
         "conversation_id": conversation_id,
         "provider": provider,
         "model": _get_ai_model(provider, data.get("model")),
