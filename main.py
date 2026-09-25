@@ -2784,7 +2784,8 @@ def list_chat_conversations(_: None = Depends(require_auth)) -> JSONResponse:
 if __name__ == "__main__":
     import uvicorn
 
-    host = os.environ.get("HOST", "0.0.0.0")
+    # 安全默认：只绑定本机回环地址（要局域网访问需显式设 HOST=0.0.0.0）
+    host = os.environ.get("HOST", "127.0.0.1")
     port = int(os.environ.get("PORT", 8000))
 
     if os.environ.get("RELOAD", "false").lower() == "true":
