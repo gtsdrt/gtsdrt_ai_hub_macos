@@ -41,7 +41,8 @@
 想从源码运行、或自己打包 → 见下方「快速开始」。
 
 > **开发者文档**：想了解整体架构、一次对话的完整工作流程、工具是怎么挂上去的、
-> 以及从源码到 DMG 的构建链路，见 [`docs/ARCHITECTURE.md`](docs/ARCHITECTURE.md)。
+> 以及从源码到 DMG 的构建链路，见 [`docs/ARCHITECTURE.md`](docs/ARCHITECTURE.md)
+> （English: [`docs/ARCHITECTURE.en.md`](docs/ARCHITECTURE.en.md)）。
 
 ---
 
