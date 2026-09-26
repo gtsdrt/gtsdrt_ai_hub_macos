@@ -451,7 +451,7 @@ flowchart LR
     B -->|"Run Script: Sync backend_server"| C["AIChatApp.app<br/>Contents/MacOS/backend_server"]
     D["SwiftUI 源码<br/>Sources/"] -->|"xcodebuild archive"| C
     C -->|"codesign（有证书时）"| E["签名后的 .app"]
-    E -->|"hdiutil create -format UDZO"| F["AIChatApp-&lt;版本&gt;.dmg"]
+    E -->|"hdiutil create -format UDZO"| F["AIChatApp-版本号.dmg"]
     F -->|"hdiutil verify"| G["发布到 GitHub Releases"]
 ```
 
