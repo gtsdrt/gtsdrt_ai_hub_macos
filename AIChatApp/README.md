@@ -8,7 +8,7 @@
 |---|---|
 | 登录页 | Google OAuth + PKCE 或本地管理员应急登录；两条路径最终都由后端签发 JWT，token 存进 Keychain |
 | 对话页 | `POST /api/chat_async` 拿 `instance_id`，**每 2 秒**轮询 `GET /api/ai_task_status` 直到 `completed` / `failed`；左侧会话列表来自 `/api/chat_conversations`，点开会话加载 `/api/chat_history` |
-| 设置页 | 配置后端地址、Azure / Meraki / Nexus Dashboard 凭据（各带「测试连接」）、`DEEPSEEK_API_KEY` / `KIMI_API_KEY` / 默认 Provider（带「测试余额」）；可启动/停止/重启本地后端、写入 `.env`、查看后端日志，项目目录与 Python 解释器收在「高级选项」里 |
+| 设置页 | 配置后端地址、Azure / Meraki / Nexus Dashboard 凭据（各带「测试连接」）、`DEEPSEEK_API_KEY` / `KIMI_API_KEY` / 默认 Provider（带「测试余额」）；可启动/停止/重启本地后端、查看后端日志，项目目录与 Python 解释器收在「高级选项」里 |
 
 ### 界面字体大小（⌘+ / ⌘−）
 
@@ -82,7 +82,7 @@ open .xcbuild/Build/Products/Debug/AIChatApp.app
 DEEPSEEK_API_KEY / KIMI_API_KEY / DEFAULT_AI_PROVIDER / AI_MOCK_MODE / PORT
 ```
 
-环境变量优先级高于项目里的 `.env`。如果勾选「启动时把设置写入项目根目录的 .env」，还会额外把这几项合并写入 `.env`（已有其它配置行会被保留）。
+环境变量优先级高于项目里的 `.env`。App 会在首次启动时把旧 `.env` 中的密钥迁入 Keychain，并在验证保存成功后从 `.env` 删除这些秘密项；之后不会再从 `.env` 回填密钥或把密钥写回文件。
 
 没有配置任何 Key 时，后端 `AI_MOCK_MODE=auto` 会自动返回 mock 回复，前端流程照常可跑通；只配了一个 Provider 的 Key 时，只有那个 Provider 走真实调用。
 
@@ -97,7 +97,7 @@ AIChatApp/
     ├── Models/APIModels.swift      # 与后端 JSON 字段一一对应
     ├── Services/
     │   ├── APIClient.swift         # login / chat_async / ai_task_status / 会话管理
-    │   ├── AppSettings.swift       # UserDefaults + Keychain + .env 写入 + 路径探测
+    │   ├── AppSettings.swift       # 非敏感设置用 UserDefaults、凭据用 Keychain + 旧 .env 一次性迁移
     │   ├── BackendController.swift # 启动/停止 main.py、健康检查、依赖检查、日志
     │   ├── KeychainStore.swift
     │   └── SessionStore.swift      # token 与全局状态
@@ -113,7 +113,7 @@ AIChatApp/
 
 脚本做的事：`xcodebuild archive`（Release）→ 从 archive 取 `.app` → 按需签名 → `hdiutil create -format UDZO`
 打成 `AIChatApp-<版本号>.dmg`，最后 `hdiutil verify` 校验。版本号自动读构建出来的 `Info.plist`
-（`CFBundleShortVersionString`，来自工程里的 `MARKETING_VERSION`，当前 `0.2.2`）。
+（`CFBundleShortVersionString`，来自工程里的 `MARKETING_VERSION`，当前 `0.2.7`）。
 DMG 内容是 `AIChatApp.app` + 指向 `/Applications` 的快捷方式 + `README.txt`，拖拽即可安装。
 
 安装步骤：

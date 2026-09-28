@@ -75,8 +75,6 @@ enum LocalizationTableEN {
         "允许的邮箱": "Allowed emails",
         "关闭": "Close",
         "内嵌后端已就绪": "Bundled backend is ready",
-        "写入 .env": "Write .env",
-        "写入失败：{0}": "Write failed: {0}",
         "凭据已更新，需要重启后端生效": "Credentials updated; restart the backend to apply them",
         "切换语言后立即生效，不用重启应用。": "Takes effect immediately — no need to restart the app.",
         "删除这个会话": "Delete this conversation",

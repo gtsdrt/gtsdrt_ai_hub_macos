@@ -203,8 +203,13 @@ PROCESS_STARTED_AT = time.time()
 
 
 def _load_env_file() -> None:
-    """加载项目根目录的 .env；已存在的环境变量优先，不会被 .env 覆盖"""
-    env_path = os.path.join(BASE_DIR, ".env")
+    """加载显式配置文件或后端旁边的 .env；已存在的环境变量优先。"""
+    configured_path = os.environ.get("AICHAT_ENV_FILE", "").strip()
+    env_path = (
+        os.path.abspath(os.path.expanduser(configured_path))
+        if configured_path
+        else os.path.join(BASE_DIR, ".env")
+    )
     if not os.path.exists(env_path):
         return
 

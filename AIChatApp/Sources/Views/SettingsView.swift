@@ -69,6 +69,11 @@ struct SettingsView: View {
                     proxy.scrollTo(scrollTarget, anchor: .top)
                 }
             }
+            .onAppear {
+                if statusMessage == nil {
+                    statusMessage = settings.lastStatusMessage
+                }
+            }
             // 改动任一凭据字段 / 切换 provider 时清空测试结果
             .onChange(of: credentialsSignature) { _ in
                 tester.clearAll()
@@ -91,6 +96,8 @@ struct SettingsView: View {
             settings.ndLoginDomain,
             settings.ndVerifyTLS ? "tls-on" : "tls-off",
             settings.containerRegistryJSON,
+            settings.backendAdminUsername,
+            settings.backendAdminPassword,
             settings.deepseekKey,
             settings.kimiKey,
             settings.defaultProvider,
@@ -140,7 +147,6 @@ struct SettingsView: View {
                 }
 
                 Toggle(loc.t("启动应用时自动拉起本地后端"), isOn: $settings.autoStartBackend)
-                Toggle(loc.t("启动时把设置写入项目根目录的 .env"), isOn: $settings.writeDotEnvOnLaunch)
 
                 Text(backendModeText)
                     .appFont(.caption)
@@ -568,13 +574,13 @@ struct SettingsView: View {
         }
     }
 
-    /// 每个容器一行密钥输入框：存 Keychain，并写回注册表的 api_key → 立即生效、不用重启后端
+    /// 每个容器一行密钥输入框：只存 Keychain，重新启动后端后生效
     @ViewBuilder
     private var containerKeyRows: some View {
         let names = AppSettings.containerNames(in: settings.containerRegistryJSON)
 
         VStack(alignment: .leading, spacing: 8) {
-            Text(loc.t("每个容器的 API Key（存 Keychain；保存时写回注册表，立即生效）"))
+            Text(loc.t("每个容器的 API Key（只存 Keychain；保存后需重启后端生效）"))
                 .appFont(.caption)
                 .bold()
                 .foregroundStyle(.secondary)
@@ -593,7 +599,7 @@ struct SettingsView: View {
                         Button(loc.t("保存密钥")) {
                             do {
                                 try settings.saveContainerAPIKey(settings.containerKeyDrafts[name] ?? "", for: name)
-                                settings.lastStatusMessage = loc.t("容器 {0} 的密钥已保存并写回注册表，立即生效", name)
+                                settings.lastStatusMessage = loc.t("容器 {0} 的密钥已保存到 Keychain；请重启后端生效", name)
                             } catch {
                                 settings.lastStatusMessage = error.localizedDescription
                             }
@@ -601,7 +607,7 @@ struct SettingsView: View {
                     }
                 }
 
-                Text(loc.t("保存后会写进注册表的 api_key 字段（文件权限 0600，无需重启后端）。想完全不落盘：把那一行 api_key 删掉即可——后端会改用 App 启动时注入的 AICHAT_CONTAINER_KEY_<容器名> 环境变量（那种模式改 key 需要重启后端）。"))
+                Text(loc.t("密钥不会写入注册表文件；由 App 从 Keychain 注入后端进程。更换密钥后需要重启后端。"))
                     .appFont(.caption)
                     .foregroundStyle(.secondary)
             }
@@ -697,7 +703,6 @@ struct SettingsView: View {
 
                 HStack(spacing: 10) {
                     Button(loc.t("保存设置")) { saveSettings() }
-                    Button(loc.t("写入 .env")) { writeDotEnv() }
                     Button(loc.t("保存并重启后端")) {
                         saveSettings()
                         backend.restart(settings: settings)
@@ -795,17 +800,27 @@ struct SettingsView: View {
                 Text(loc.t("本地管理员（应急入口）"))
                     .appFont(.headline)
 
-                SettingRow(title: loc.t("用户名")) {
+                SettingRow(title: loc.t("默认登录用户名")) {
                     TextField("admin", text: $settings.username)
                         .textFieldStyle(.roundedBorder)
                 }
 
-                SettingRow(title: loc.t("密码")) {
-                    SecureField("password123", text: $settings.loginPassword)
+                SettingRow(title: "后端管理员用户名（ADMIN_USERNAME）") {
+                    TextField("admin", text: $settings.backendAdminUsername)
                         .textFieldStyle(.roundedBorder)
                 }
 
-                Text(loc.t("默认 admin / password123，可在后端 .env 里用 ADMIN_USERNAME、ADMIN_PASSWORD 覆盖。"))
+                SettingRow(title: loc.t("密码")) {
+                    SecureField(loc.t("登录密码"), text: $settings.loginPassword)
+                        .textFieldStyle(.roundedBorder)
+                }
+
+                SettingRow(title: "后端管理员密码（ADMIN_PASSWORD）") {
+                    SecureField(loc.t("仅保存在 macOS Keychain"), text: $settings.backendAdminPassword)
+                        .textFieldStyle(.roundedBorder)
+                }
+
+                Text(loc.t("登录密码用于记住本机登录；后端管理员密码单独保存在 Keychain，并在启动后端时注入。"))
                     .appFont(.caption)
                     .foregroundStyle(.secondary)
 
@@ -880,16 +895,6 @@ struct SettingsView: View {
             statusMessage = loc.t("设置已保存（密钥在 Keychain 中）")
         } catch {
             statusMessage = loc.t("保存失败：{0}", error.localizedDescription)
-        }
-    }
-
-    private func writeDotEnv() {
-        do {
-            try settings.persist()
-            let url = try settings.writeDotEnv()
-            statusMessage = loc.t("已写入：{0}", url.path)
-        } catch {
-            statusMessage = loc.t("写入失败：{0}", error.localizedDescription)
         }
     }
 

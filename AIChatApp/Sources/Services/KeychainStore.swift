@@ -15,6 +15,15 @@ final class KeychainStore {
         static let merakiAPIKey = "meraki_api_key"
         static let ndAPIKey = "nd_api_key"
         static let ndPassword = "nd_password"
+        static let adminPassword = "backend_admin_password"
+        static let jwtSecret = "backend_jwt_secret"
+        static let ansibleExecutorAPIKey = "ansible_executor_api_key"
+        static let googleClientSecret = "google_client_secret"
+
+        /// 兼容迁移未在设置界面中单独管理的 .env 凭据
+        static func environmentSecret(_ name: String) -> String {
+            "env_secret_" + name.lowercased()
+        }
 
         /// 每个 Serverless 容器一把密钥：container_api_key_<name>（名字按容器名动态生成）
         static func containerAPIKey(_ containerName: String) -> String {
@@ -50,13 +59,27 @@ final class KeychainStore {
             kSecAttrAccount as String: key,
         ]
 
-        // 先删旧的，再写入，避免重复项
-        SecItemDelete(baseQuery as CFDictionary)
+        // 空值代表清除；不要在 Keychain 中留下一个“成功读取但为空”的条目。
+        if value.isEmpty {
+            delete(key)
+            return
+        }
+
+        let update: [String: Any] = [
+            kSecValueData as String: Data(value.utf8),
+            kSecAttrAccessible as String: kSecAttrAccessibleAfterFirstUnlock,
+        ]
+        let updateStatus = SecItemUpdate(baseQuery as CFDictionary, update as CFDictionary)
+        if updateStatus == errSecSuccess {
+            return
+        }
+        guard updateStatus == errSecItemNotFound else {
+            throw KeychainError.unexpectedStatus(updateStatus)
+        }
 
         var attributes = baseQuery
         attributes[kSecValueData as String] = Data(value.utf8)
         attributes[kSecAttrAccessible as String] = kSecAttrAccessibleAfterFirstUnlock
-
         let status = SecItemAdd(attributes as CFDictionary, nil)
         guard status == errSecSuccess else {
             throw KeychainError.unexpectedStatus(status)

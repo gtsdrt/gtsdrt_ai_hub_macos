@@ -1,5 +1,6 @@
 import CryptoKit
 import Foundation
+import Security
 
 /// 应用设置：非敏感项存 UserDefaults，密钥类存 Keychain
 @MainActor
@@ -9,9 +10,9 @@ final class AppSettings: ObservableObject {
         static let projectDirectory = "projectDirectory"
         static let pythonPath = "pythonPath"
         static let autoStartBackend = "autoStartBackend"
-        static let writeDotEnvOnLaunch = "writeDotEnvOnLaunch"
         static let defaultProvider = "defaultProvider"
         static let username = "username"
+        static let backendAdminUsername = "backendAdminUsername"
         static let googleClientID = "googleClientID"
         static let googleAllowedEmails = "googleAllowedEmails"
         static let googleAllowedDomains = "googleAllowedDomains"
@@ -29,6 +30,8 @@ final class AppSettings: ObservableObject {
         static let ndLoginDomain = "ndLoginDomain"
         static let ndVerifyTLS = "ndVerifyTLS"
         static let containerRegistry = "containerRegistryJSON"
+        /// 仅存环境变量名（不是凭据值），用于重启时从 Keychain 注入旧版自定义密钥。
+        static let keychainEnvironmentSecretNames = "keychainEnvironmentSecretNames"
         /// 当前后端进程启动时用的凭据指纹
         static let appliedCredentialsFingerprint = "appliedCredentialsFingerprint"
         static let fontScale = "ui.fontScale"
@@ -55,9 +58,10 @@ final class AppSettings: ObservableObject {
     @Published var projectDirectory: String
     @Published var pythonPath: String
     @Published var autoStartBackend: Bool
-    @Published var writeDotEnvOnLaunch: Bool
     @Published var defaultProvider: String
+    /// 登录页预填用户名；和后端实际接受的管理员用户名分开保存
     @Published var username: String
+    @Published var backendAdminUsername: String
     @Published var googleClientID: String
     @Published var googleAllowedEmails: String
     @Published var googleAllowedDomains: String
@@ -91,6 +95,8 @@ final class AppSettings: ObservableObject {
     /// auto（识别 Azure 域名自动带 api-key 头）/ bearer / api-key
     @Published var openaiAuthMode: String
     @Published var loginPassword: String
+    /// 本地后端管理员口令（与“记住登录密码”区分）
+    @Published var backendAdminPassword: String
 
     // Azure / Meraki 工具凭据：Client Secret 与 API Key 进 Keychain，其余进 UserDefaults
     @Published var azureTenantID: String
@@ -110,7 +116,7 @@ final class AppSettings: ObservableObject {
     @Published var ndVerifyTLS: Bool
 
     // 多容器注册表（Serverless 容器：代码在 GitHub，跑在 Azure Container Apps）
-    /// 注册表 JSON 文本（落盘到 App Support/containers.json，后端每次调用都重读 → 改完立即生效）
+    /// 注册表 JSON 文本（落盘到 App Support/containers.json；仅非敏感元数据热加载）
     @Published var containerRegistryJSON: String
 
     @Published var lastStatusMessage: String?
@@ -121,16 +127,21 @@ final class AppSettings: ObservableObject {
     init() {
         let detectedProject = Self.detectProjectDirectory()
         let projectPath = defaults.string(forKey: DefaultsKey.projectDirectory) ?? detectedProject
-        // 页面上没存过的字段用项目里的 .env 预填，避免「.env 里明明配了，页面却是空的」
+        // 首次升级时迁移 .env 凭据到 Keychain；只有迁移成功才会删除文件中的秘密行。
+        let envMigration = Self.migrateDotEnvSecrets(
+            projectDirectory: projectPath,
+            keychain: keychain
+        )
         let dotEnv = Self.loadDotEnv(projectDirectory: projectPath)
 
         backendBaseURL = defaults.string(forKey: DefaultsKey.backendBaseURL) ?? "http://127.0.0.1:8000"
         projectDirectory = projectPath
         pythonPath = defaults.string(forKey: DefaultsKey.pythonPath) ?? ""
         autoStartBackend = defaults.object(forKey: DefaultsKey.autoStartBackend) as? Bool ?? true
-        writeDotEnvOnLaunch = defaults.object(forKey: DefaultsKey.writeDotEnvOnLaunch) as? Bool ?? false
         defaultProvider = defaults.string(forKey: DefaultsKey.defaultProvider) ?? "deepseek"
         username = defaults.string(forKey: DefaultsKey.username) ?? "admin"
+        backendAdminUsername = defaults.string(forKey: DefaultsKey.backendAdminUsername)
+            ?? dotEnv["ADMIN_USERNAME"] ?? "admin"
         googleClientID = defaults.string(forKey: DefaultsKey.googleClientID)
             ?? dotEnv["GOOGLE_CLIENT_ID"] ?? ""
         googleAllowedEmails = defaults.string(forKey: DefaultsKey.googleAllowedEmails)
@@ -150,38 +161,50 @@ final class AppSettings: ObservableObject {
         language = AppLanguage(rawValue: defaults.string(forKey: DefaultsKey.language) ?? "")
             ?? .system
 
-        deepseekKey = keychain.read(KeychainStore.Keys.deepseekKey) ?? dotEnv["DEEPSEEK_API_KEY"] ?? ""
-        kimiKey = keychain.read(KeychainStore.Keys.kimiKey) ?? dotEnv["KIMI_API_KEY"] ?? ""
-        openaiKey = keychain.read(KeychainStore.Keys.openaiKey) ?? dotEnv["OPENAI_API_KEY"] ?? ""
+        deepseekKey = keychain.read(KeychainStore.Keys.deepseekKey) ?? ""
+        kimiKey = keychain.read(KeychainStore.Keys.kimiKey) ?? ""
+        openaiKey = keychain.read(KeychainStore.Keys.openaiKey) ?? ""
         openaiBaseURL = defaults.string(forKey: DefaultsKey.openaiBaseURL)
             ?? dotEnv["OPENAI_BASE_URL"] ?? "https://api.openai.com/v1"
         openaiModel = defaults.string(forKey: DefaultsKey.openaiModel)
             ?? dotEnv["OPENAI_MODEL_NAME"] ?? "gpt-4o"
         openaiAuthMode = defaults.string(forKey: DefaultsKey.openaiAuthMode)
             ?? dotEnv["OPENAI_AUTH_MODE"] ?? "auto"
-        loginPassword = keychain.read(KeychainStore.Keys.loginPassword) ?? ""
+        let storedAdminPassword = keychain.read(KeychainStore.Keys.adminPassword) ?? ""
+        backendAdminPassword = storedAdminPassword
+        loginPassword = keychain.read(KeychainStore.Keys.loginPassword)
+            ?? storedAdminPassword
 
         azureTenantID = defaults.string(forKey: DefaultsKey.azureTenantID) ?? dotEnv["AZURE_TENANT_ID"] ?? ""
         azureClientID = defaults.string(forKey: DefaultsKey.azureClientID) ?? dotEnv["AZURE_CLIENT_ID"] ?? ""
-        azureClientSecret = keychain.read(KeychainStore.Keys.azureClientSecret)
-            ?? dotEnv["AZURE_CLIENT_SECRET"] ?? ""
+        azureClientSecret = keychain.read(KeychainStore.Keys.azureClientSecret) ?? ""
         azureSubscriptionID = defaults.string(forKey: DefaultsKey.azureSubscriptionID)
             ?? dotEnv["AZURE_SUBSCRIPTION_ID"] ?? ""
-        merakiAPIKey = keychain.read(KeychainStore.Keys.merakiAPIKey) ?? dotEnv["MERAKI_API_KEY"] ?? ""
+        merakiAPIKey = keychain.read(KeychainStore.Keys.merakiAPIKey) ?? ""
 
         ndBaseURL = defaults.string(forKey: DefaultsKey.ndBaseURL)
             ?? dotEnv["ND_BASE_URL"] ?? ""
         ndUsername = defaults.string(forKey: DefaultsKey.ndUsername)
             ?? dotEnv["ND_USERNAME"] ?? ""
-        ndAPIKey = keychain.read(KeychainStore.Keys.ndAPIKey) ?? dotEnv["ND_API_KEY"] ?? ""
-        ndPassword = keychain.read(KeychainStore.Keys.ndPassword) ?? dotEnv["ND_PASSWORD"] ?? ""
+        ndAPIKey = keychain.read(KeychainStore.Keys.ndAPIKey) ?? ""
+        ndPassword = keychain.read(KeychainStore.Keys.ndPassword) ?? ""
         ndLoginDomain = defaults.string(forKey: DefaultsKey.ndLoginDomain)
             ?? dotEnv["ND_LOGIN_DOMAIN"] ?? "local"
         ndVerifyTLS = defaults.object(forKey: DefaultsKey.ndVerifyTLS) as? Bool
             ?? Self.boolFromEnv(dotEnv["ND_VERIFY_TLS"])
 
         // 注册表：优先用落盘文件（后端读的也是同一份）；没有落盘文件时用默认值/旧 .env 预填
-        containerRegistryJSON = Self.loadContainerRegistry(dotEnv: dotEnv)
+        let rawContainerRegistry = Self.loadContainerRegistry(dotEnv: dotEnv)
+        var containerMigrationError: Error?
+        do {
+            containerRegistryJSON = try Self.migrateContainerRegistrySecrets(
+                rawContainerRegistry,
+                keychain: keychain
+            )
+        } catch {
+            containerRegistryJSON = rawContainerRegistry
+            containerMigrationError = error
+        }
 
         if pythonPath.isEmpty {
             pythonPath = Self.detectPythonPath(projectDirectory: projectPath)
@@ -189,6 +212,13 @@ final class AppSettings: ObservableObject {
 
         // 全部存好之后再同步语言（此时才能读 self.language）
         Localizer.current = Localizer(language: language)
+        if let error = envMigration.error {
+            lastStatusMessage = L("凭据迁移到 Keychain 失败；.env 未清理：{0}", error.localizedDescription)
+        } else if let error = containerMigrationError {
+            lastStatusMessage = L("容器密钥迁移到 Keychain 失败：{0}", error.localizedDescription)
+        } else if envMigration.migratedSecrets {
+            lastStatusMessage = L("旧 .env 凭据已迁移并验证保存在 Keychain")
+        }
     }
 
     // MARK: - 保存
@@ -198,9 +228,9 @@ final class AppSettings: ObservableObject {
         defaults.set(projectDirectory, forKey: DefaultsKey.projectDirectory)
         defaults.set(pythonPath, forKey: DefaultsKey.pythonPath)
         defaults.set(autoStartBackend, forKey: DefaultsKey.autoStartBackend)
-        defaults.set(writeDotEnvOnLaunch, forKey: DefaultsKey.writeDotEnvOnLaunch)
         defaults.set(defaultProvider, forKey: DefaultsKey.defaultProvider)
         defaults.set(username, forKey: DefaultsKey.username)
+        defaults.set(backendAdminUsername, forKey: DefaultsKey.backendAdminUsername)
         defaults.set(googleClientID, forKey: DefaultsKey.googleClientID)
         defaults.set(googleAllowedEmails, forKey: DefaultsKey.googleAllowedEmails)
         defaults.set(googleAllowedDomains, forKey: DefaultsKey.googleAllowedDomains)
@@ -219,7 +249,7 @@ final class AppSettings: ObservableObject {
         defaults.set(ndUsername, forKey: DefaultsKey.ndUsername)
         defaults.set(ndLoginDomain, forKey: DefaultsKey.ndLoginDomain)
         defaults.set(ndVerifyTLS, forKey: DefaultsKey.ndVerifyTLS)
-        // 注册表落盘（后端每次调用都重读文件，所以改完不用重启后端）；
+        // 注册表仅保存非敏感元数据，后端每次调用重读；
         // JSON 非法时抛错、保留旧文件，不阻断其它设置的保存
         try? saveContainerRegistry()
 
@@ -227,6 +257,7 @@ final class AppSettings: ObservableObject {
         try keychain.save(kimiKey, for: KeychainStore.Keys.kimiKey)
         try keychain.save(openaiKey, for: KeychainStore.Keys.openaiKey)
         try keychain.save(loginPassword, for: KeychainStore.Keys.loginPassword)
+        try keychain.save(backendAdminPassword, for: KeychainStore.Keys.adminPassword)
         try keychain.save(azureClientSecret, for: KeychainStore.Keys.azureClientSecret)
         try keychain.save(merakiAPIKey, for: KeychainStore.Keys.merakiAPIKey)
         try keychain.save(ndAPIKey, for: KeychainStore.Keys.ndAPIKey)
@@ -270,7 +301,19 @@ final class AppSettings: ObservableObject {
         var environment: [String: String] = [
             "DEFAULT_AI_PROVIDER": defaultProvider,
             "AI_MOCK_MODE": "auto",
+            // App 管理的后端固定只监听本机；不要继承旧 .env 中的 0.0.0.0。
+            "HOST": "127.0.0.1",
+            "ADMIN_USERNAME": backendAdminUsername.trimmingCharacters(in: .whitespaces),
+            "AICHAT_ENV_FILE": URL(fileURLWithPath: projectDirectory, isDirectory: true)
+                .appendingPathComponent(".env").path,
         ]
+        let migratedSecretNames = defaults.stringArray(
+            forKey: DefaultsKey.keychainEnvironmentSecretNames
+        ) ?? []
+        for name in Set(Self.keychainEnvironmentSecrets + migratedSecretNames) {
+            // 清掉父进程继承的旧值，再从 Keychain 注入；空值可阻止 dotenv 回退。
+            environment[name] = keychain.read(Self.keychainAccount(forEnvironmentName: name)) ?? ""
+        }
         if !deepseekKey.trimmingCharacters(in: .whitespaces).isEmpty {
             environment["DEEPSEEK_API_KEY"] = deepseekKey.trimmingCharacters(in: .whitespaces)
         }
@@ -335,7 +378,7 @@ final class AppSettings: ObservableObject {
         return result
     }
 
-    /// Azure / Meraki / Nexus Dashboard 凭据对应的环境变量（空值不注入，交给 .env 或环境本身）
+    /// 设置页中的 Azure / Meraki / Nexus Dashboard 值；敏感值的权威来源为 Keychain。
     func credentialEnvironment() -> [String: String] {
         var candidates = [
             "AZURE_TENANT_ID": azureTenantID,
@@ -435,7 +478,12 @@ final class AppSettings: ObservableObject {
 
     /// 校验 + 落盘（JSON 非法时抛错，旧文件保持不动）
     func saveContainerRegistry() throws {
-        let text = containerRegistryJSON.trimmingCharacters(in: .whitespacesAndNewlines)
+        // 即便用户直接编辑 JSON 放入 api_key，也先迁到 Keychain 并清理明文字段。
+        let text = try Self.migrateContainerRegistrySecrets(
+            containerRegistryJSON.trimmingCharacters(in: .whitespacesAndNewlines),
+            keychain: keychain
+        )
+        containerRegistryJSON = text
         if !text.isEmpty {
             guard
                 let data = text.data(using: .utf8),
@@ -451,12 +499,12 @@ final class AppSettings: ObservableObject {
             withIntermediateDirectories: true
         )
         try text.write(to: url, atomically: true, encoding: .utf8)
-        // 注册表里可能直接写了 api_key，收紧权限到仅本人可读写
+        // 收紧权限到仅本人可读写
         try? FileManager.default.setAttributes([.posixPermissions: 0o600], ofItemAtPath: url.path)
         defaults.set(containerRegistryJSON, forKey: DefaultsKey.containerRegistry)
     }
 
-    // MARK: - 每个容器的 API Key（界面输入 → Keychain，并写回注册表）
+    // MARK: - 每个容器的 API Key（界面输入 → Keychain）
 
     /// 界面上的密钥草稿（不进 credentialsFingerprint，避免误触发「需要重启」）
     @Published var containerKeyDrafts: [String: String] = [:]
@@ -493,11 +541,7 @@ final class AppSettings: ObservableObject {
         }
     }
 
-    /// 保存某个容器的密钥：
-    ///   1) 存 Keychain（App 侧的权威副本，下次打开设置页自动回填）
-    ///   2) 写回注册表 JSON 的 api_key 字段 → 后端热加载，**立即生效、不用重启**
-    /// 想完全不落盘：把 JSON 里那行 api_key 删掉即可，后端会改用 App 启动时注入的
-    /// AICHAT_CONTAINER_KEY_<NAME> 环境变量（这种模式换 key 需要重启后端）。
+    /// 容器密钥只保存到 Keychain；启动后端时注入环境变量，因此改密钥后需要重启后端。
     func saveContainerAPIKey(_ rawKey: String, for container: String) throws {
         let key = rawKey.trimmingCharacters(in: .whitespacesAndNewlines)
 
@@ -508,7 +552,7 @@ final class AppSettings: ObservableObject {
         }
         containerKeyDrafts[container] = key
 
-        // 写回注册表
+        // 确保旧注册表里的 api_key 也不会继续留在明文 JSON 中。
         guard
             let data = containerRegistryJSON.data(using: .utf8),
             let root = try? JSONSerialization.jsonObject(with: data, options: []),
@@ -521,10 +565,10 @@ final class AppSettings: ObservableObject {
         for index in containers.indices {
             guard (containers[index]["name"] as? String)?.trimmingCharacters(in: .whitespaces) == container
             else { continue }
-            if key.isEmpty {
-                containers[index].removeValue(forKey: "api_key")
-            } else {
-                containers[index]["api_key"] = key
+            containers[index].removeValue(forKey: "api_key")
+            if !key.isEmpty {
+                // 显式设置的 Keychain 密钥优先使用自动注入变量，避免旧 api_key_env 覆盖它。
+                containers[index].removeValue(forKey: "api_key_env")
             }
             updated = true
         }
@@ -539,72 +583,6 @@ final class AppSettings: ObservableObject {
         )
         containerRegistryJSON = String(data: pretty, encoding: .utf8) ?? containerRegistryJSON
         try saveContainerRegistry()
-    }
-
-    /// 写入/合并项目根目录的 .env，保留文件里其它配置行
-    @discardableResult
-    func writeDotEnv() throws -> URL {
-        let directory = URL(fileURLWithPath: projectDirectory, isDirectory: true)
-        let fileURL = directory.appendingPathComponent(".env")
-
-        var updates: [String: String] = ["DEFAULT_AI_PROVIDER": defaultProvider]
-        let trimmedDeepseek = deepseekKey.trimmingCharacters(in: .whitespaces)
-        let trimmedKimi = kimiKey.trimmingCharacters(in: .whitespaces)
-        if !trimmedDeepseek.isEmpty { updates["DEEPSEEK_API_KEY"] = trimmedDeepseek }
-        if !trimmedKimi.isEmpty { updates["KIMI_API_KEY"] = trimmedKimi }
-        let trimmedOpenAI = openaiKey.trimmingCharacters(in: .whitespaces)
-        if !trimmedOpenAI.isEmpty { updates["OPENAI_API_KEY"] = trimmedOpenAI }
-        let trimmedBase = openaiBaseURL.trimmingCharacters(in: .whitespaces)
-        let trimmedModel = openaiModel.trimmingCharacters(in: .whitespaces)
-        if !trimmedBase.isEmpty { updates["OPENAI_BASE_URL"] = trimmedBase }
-        if !trimmedModel.isEmpty { updates["OPENAI_MODEL_NAME"] = trimmedModel }
-        if !openaiAuthMode.trimmingCharacters(in: .whitespaces).isEmpty {
-            updates["OPENAI_AUTH_MODE"] = openaiAuthMode
-        }
-        let trimmedGoogleClientID = googleClientID.trimmingCharacters(in: .whitespaces)
-        let trimmedGoogleEmails = googleAllowedEmails.trimmingCharacters(in: .whitespaces)
-        let trimmedGoogleDomains = googleAllowedDomains.trimmingCharacters(in: .whitespaces)
-        if !trimmedGoogleClientID.isEmpty { updates["GOOGLE_CLIENT_ID"] = trimmedGoogleClientID }
-        if !trimmedGoogleEmails.isEmpty { updates["GOOGLE_ALLOWED_EMAILS"] = trimmedGoogleEmails }
-        if !trimmedGoogleDomains.isEmpty { updates["GOOGLE_ALLOWED_DOMAINS"] = trimmedGoogleDomains }
-        let trimmedGitHubClientID = githubClientID.trimmingCharacters(in: .whitespaces)
-        let trimmedGitHubLogins = githubAllowedLogins.trimmingCharacters(in: .whitespaces)
-        let trimmedGitHubEmails = githubAllowedEmails.trimmingCharacters(in: .whitespaces)
-        if !trimmedGitHubClientID.isEmpty { updates["GITHUB_CLIENT_ID"] = trimmedGitHubClientID }
-        if !trimmedGitHubLogins.isEmpty { updates["GITHUB_ALLOWED_LOGINS"] = trimmedGitHubLogins }
-        if !trimmedGitHubEmails.isEmpty { updates["GITHUB_ALLOWED_EMAILS"] = trimmedGitHubEmails }
-        for (key, value) in credentialEnvironment() {
-            updates[key] = value
-        }
-        if let port = backendPort { updates["PORT"] = String(port) }
-
-        var lines: [String] = []
-        var pending = updates
-
-        if let existing = try? String(contentsOf: fileURL, encoding: .utf8), !existing.isEmpty {
-            for raw in existing.split(separator: "\n", omittingEmptySubsequences: false) {
-                let line = String(raw)
-                let trimmed = line.trimmingCharacters(in: .whitespaces)
-                if !trimmed.hasPrefix("#"), let separator = trimmed.firstIndex(of: "=") {
-                    let key = String(trimmed[trimmed.startIndex..<separator]).trimmingCharacters(in: .whitespaces)
-                    if let value = pending.removeValue(forKey: key) {
-                        lines.append("\(key)=\(value)")
-                        continue
-                    }
-                }
-                lines.append(line)
-            }
-        } else {
-            lines.append("# 由 AIChatApp 的设置页生成")
-        }
-
-        for (key, value) in pending.sorted(by: { $0.key < $1.key }) {
-            lines.append("\(key)=\(value)")
-        }
-
-        let text = lines.joined(separator: "\n").trimmingCharacters(in: .whitespacesAndNewlines) + "\n"
-        try text.write(to: fileURL, atomically: true, encoding: .utf8)
-        return fileURL
     }
 
     // MARK: - 自动探测
@@ -638,11 +616,190 @@ final class AppSettings: ObservableObject {
         return ["1", "true", "yes", "on"].contains(value)
     }
 
+    /// .env 中需要迁移到 Keychain 的变量名。匹配规则也覆盖后续新增的 *_KEY / *_SECRET 等凭据。
+    private static let keychainEnvironmentSecrets = [
+        "DEEPSEEK_API_KEY",
+        "KIMI_API_KEY",
+        "OPENAI_API_KEY",
+        "AZURE_CLIENT_SECRET",
+        "MERAKI_API_KEY",
+        "ND_API_KEY",
+        "ND_PASSWORD",
+        "ADMIN_PASSWORD",
+        "JWT_SECRET",
+        "ANSIBLE_EXECUTOR_API_KEY",
+        "GOOGLE_CLIENT_SECRET",
+        "CONTAINER_ENDPOINTS_JSON",
+    ]
+
+    private static func isSecretEnvironmentName(_ rawName: String) -> Bool {
+        let name = rawName.uppercased()
+        return name == "JWT_SECRET"
+            || name == "CONTAINER_ENDPOINTS_JSON"
+            || name.contains("SECRET")
+            || name.contains("PASSWORD")
+            || name.contains("CREDENTIAL")
+            || name.contains("PRIVATE_KEY")
+            || name.contains("TOKEN")
+            || name.hasSuffix("_KEY")
+            || name.hasSuffix("_CONNECTION_STRING")
+    }
+
+    /// 保留现有 UI 使用的 Keychain account 名称；其它凭据按环境变量名独立存储。
+    private static func keychainAccount(forEnvironmentName rawName: String) -> String {
+        switch rawName.uppercased() {
+        case "DEEPSEEK_API_KEY": return KeychainStore.Keys.deepseekKey
+        case "KIMI_API_KEY": return KeychainStore.Keys.kimiKey
+        case "OPENAI_API_KEY": return KeychainStore.Keys.openaiKey
+        case "AZURE_CLIENT_SECRET": return KeychainStore.Keys.azureClientSecret
+        case "MERAKI_API_KEY": return KeychainStore.Keys.merakiAPIKey
+        case "ND_API_KEY": return KeychainStore.Keys.ndAPIKey
+        case "ND_PASSWORD": return KeychainStore.Keys.ndPassword
+        case "ADMIN_PASSWORD": return KeychainStore.Keys.adminPassword
+        case "JWT_SECRET": return KeychainStore.Keys.jwtSecret
+        case "ANSIBLE_EXECUTOR_API_KEY": return KeychainStore.Keys.ansibleExecutorAPIKey
+        case "GOOGLE_CLIENT_SECRET": return KeychainStore.Keys.googleClientSecret
+        default: return KeychainStore.Keys.environmentSecret(rawName)
+        }
+    }
+
+    private struct DotEnvSecretMigrationResult {
+        let migratedSecrets: Bool
+        let error: Error?
+    }
+
+    /// 从 .env 导入秘密到 Keychain。已有 Keychain 值优先，不会被旧文件覆盖；
+    /// 只有确认每个凭据都能从 Keychain 读回后才清理 .env。
+    private static func migrateDotEnvSecrets(
+        projectDirectory: String,
+        keychain: KeychainStore
+    ) -> DotEnvSecretMigrationResult {
+        let fileURL = URL(fileURLWithPath: projectDirectory, isDirectory: true)
+            .appendingPathComponent(".env")
+        guard FileManager.default.fileExists(atPath: fileURL.path) else {
+            return DotEnvSecretMigrationResult(migratedSecrets: false, error: nil)
+        }
+
+        do {
+            let text = try String(contentsOf: fileURL, encoding: .utf8)
+            var environmentValues: [String: String] = [:]
+            for raw in text.split(separator: "\n", omittingEmptySubsequences: false) {
+                let line = raw.trimmingCharacters(in: .whitespaces)
+                guard !line.isEmpty, !line.hasPrefix("#"), let separator = line.firstIndex(of: "=") else {
+                    continue
+                }
+                let name = String(line[..<separator]).trimmingCharacters(in: .whitespaces)
+                guard isSecretEnvironmentName(name) else { continue }
+                var value = String(line[line.index(after: separator)...]).trimmingCharacters(in: .whitespaces)
+                if value.count >= 2, value.hasPrefix("\""), value.hasSuffix("\"") {
+                    value = String(value.dropFirst().dropLast())
+                } else if value.count >= 2, value.hasPrefix("'"), value.hasSuffix("'") {
+                    value = String(value.dropFirst().dropLast())
+                }
+                environmentValues[name] = value
+            }
+
+            for (name, value) in environmentValues where !value.isEmpty {
+                let account = keychainAccount(forEnvironmentName: name)
+                if let existing = keychain.read(account), !existing.isEmpty {
+                    continue
+                }
+                try keychain.save(value, for: account)
+                guard keychain.read(account) == value else {
+                    throw KeychainStore.KeychainError.unexpectedStatus(errSecVerifyFailed)
+                }
+            }
+            let migratedNames = (UserDefaults.standard.stringArray(
+                forKey: DefaultsKey.keychainEnvironmentSecretNames
+            ) ?? []) + Array(environmentValues.keys)
+            UserDefaults.standard.set(
+                Array(Set(migratedNames)).sorted(),
+                forKey: DefaultsKey.keychainEnvironmentSecretNames
+            )
+
+            let lines = text.components(separatedBy: .newlines)
+            let cleaned = lines.filter { raw in
+                let line = raw.trimmingCharacters(in: .whitespaces)
+                guard !line.isEmpty, !line.hasPrefix("#"), let separator = line.firstIndex(of: "=") else {
+                    return true
+                }
+                let name = String(line[..<separator]).trimmingCharacters(in: .whitespaces)
+                guard isSecretEnvironmentName(name) else { return true }
+                // 空的秘密项也移除；非空值必须已由 Keychain 确认保存。
+                let account = keychainAccount(forEnvironmentName: name)
+                return !environmentValues[name, default: ""].isEmpty
+                    && (keychain.read(account) ?? "").isEmpty
+            }.joined(separator: "\n")
+            if cleaned != text {
+                try cleaned.write(to: fileURL, atomically: true, encoding: .utf8)
+                try FileManager.default.setAttributes(
+                    [.posixPermissions: 0o600],
+                    ofItemAtPath: fileURL.path
+                )
+            }
+            return DotEnvSecretMigrationResult(
+                migratedSecrets: environmentValues.values.contains { !$0.isEmpty },
+                error: nil
+            )
+        } catch {
+            return DotEnvSecretMigrationResult(migratedSecrets: false, error: error)
+        }
+    }
+
+    /// 旧版容器注册表曾将 api_key 明文写入 JSON；先存入 Keychain 并验证，再去掉字段。
+    private static func migrateContainerRegistrySecrets(
+        _ rawJSON: String,
+        keychain: KeychainStore
+    ) throws -> String {
+        guard
+            let data = rawJSON.data(using: .utf8),
+            let root = try? JSONSerialization.jsonObject(with: data, options: []),
+            var containers = containerArray(from: root)
+        else { return rawJSON }
+
+        var changed = false
+        for index in containers.indices {
+            guard let rawKey = containers[index]["api_key"] as? String else { continue }
+            guard let name = (containers[index]["name"] as? String)?
+                .trimmingCharacters(in: .whitespacesAndNewlines),
+                  !name.isEmpty
+            else { throw ContainerRegistryError.invalidJSON }
+
+            let account = KeychainStore.Keys.containerAPIKey(name)
+            if !rawKey.isEmpty, (keychain.read(account) ?? "").isEmpty {
+                try keychain.save(rawKey, for: account)
+                guard keychain.read(account) == rawKey else {
+                    throw KeychainStore.KeychainError.unexpectedStatus(errSecVerifyFailed)
+                }
+            }
+            // 有旧 Keychain 值时以它为准；不论值是否为空，都不再将 key 留在 JSON。
+            containers[index].removeValue(forKey: "api_key")
+            changed = true
+        }
+
+        guard changed else { return rawJSON }
+        let payload: Any = (root is [[String: Any]]) ? containers : ["containers": containers]
+        let cleanData = try JSONSerialization.data(
+            withJSONObject: payload,
+            options: [.prettyPrinted, .sortedKeys, .withoutEscapingSlashes]
+        )
+        let cleanText = String(data: cleanData, encoding: .utf8) ?? rawJSON
+        let url = URL(fileURLWithPath: containerRegistryPath())
+        try FileManager.default.createDirectory(
+            at: url.deletingLastPathComponent(),
+            withIntermediateDirectories: true
+        )
+        try cleanText.write(to: url, atomically: true, encoding: .utf8)
+        try FileManager.default.setAttributes([.posixPermissions: 0o600], ofItemAtPath: url.path)
+        UserDefaults.standard.set(cleanText, forKey: DefaultsKey.containerRegistry)
+        return cleanText
+    }
+
     // MARK: - 凭据是否已经生效
 
     /// 所有凭据的指纹（只存哈希，不落明文）
     var credentialsFingerprint: String {
-        let parts = [
+        var parts = [
             azureTenantID,
             azureClientID,
             azureClientSecret,
@@ -654,8 +811,7 @@ final class AppSettings: ObservableObject {
             ndPassword,
             ndLoginDomain,
             ndVerifyTLS ? "tls-verify-on" : "tls-verify-off",
-            // 容器注册表是热加载的（后端每次调用都重读文件），故意不进指纹：
-            // 否则改一行注册表就会让所有其它凭据都变成「需要重启后端」。
+            // 容器元数据热加载；但容器 Keychain 凭据通过环境变量注入，需重启后端。
             deepseekKey,
             kimiKey,
             openaiKey,
@@ -668,7 +824,18 @@ final class AppSettings: ObservableObject {
             githubClientID,
             githubAllowedLogins,
             githubAllowedEmails,
+            backendAdminUsername,
+            backendAdminPassword,
         ].map { $0.trimmingCharacters(in: .whitespaces) }
+
+        let migratedSecretNames = defaults.stringArray(
+            forKey: DefaultsKey.keychainEnvironmentSecretNames
+        ) ?? []
+        parts += Set(Self.keychainEnvironmentSecrets + migratedSecretNames)
+            .sorted()
+            .map { keychain.read(Self.keychainAccount(forEnvironmentName: $0)) ?? "" }
+        parts += Self.containerNames(in: containerRegistryJSON)
+            .map { keychain.read(KeychainStore.Keys.containerAPIKey($0)) ?? "" }
 
         let digest = SHA256.hash(data: Data(parts.joined(separator: "\u{1}").utf8))
         return digest.map { String(format: "%02x", $0) }.joined()

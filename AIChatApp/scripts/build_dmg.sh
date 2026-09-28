@@ -8,6 +8,7 @@
 #   SKIP_CODESIGN=1                 强制跳过签名
 #   CODESIGN_IDENTITY="Developer ID Application: xxx (TEAMID)"  指定签名证书
 #   AICHAT_ARM64_OVERRIDE=1         仅自动化用：允许在 Rosetta 终端里继续（产物仍会被 lipo 硬校验）
+#   XCODEBUILD_OTHER_SWIFT_FLAGS="-disable-sandbox"  仅受限构建环境需要
 #
 # 产物：项目根目录 AIChatApp-<版本号>.dmg（版本号取自构建出来的 Info.plist）
 
@@ -34,6 +35,10 @@ ARCHIVE_PATH="$BUILD_DIR/$APP_NAME.xcarchive"
 DERIVED_DATA="$BUILD_DIR/dmg-derived"
 STAGING_DIR="$BUILD_DIR/dmg-staging"
 APP_SRC="$ARCHIVE_PATH/Products/Applications/$APP_NAME.app"
+XCODEBUILD_EXTRA_FLAGS=()
+if [ -n "${XCODEBUILD_OTHER_SWIFT_FLAGS:-}" ]; then
+  XCODEBUILD_EXTRA_FLAGS+=("OTHER_SWIFT_FLAGS=${XCODEBUILD_OTHER_SWIFT_FLAGS}")
+fi
 
 GREEN='\033[0;32m'; YELLOW='\033[1;33m'; RED='\033[0;31m'; NC='\033[0m'
 step() { printf "${GREEN}==>${NC} %s\n" "$*"; }
@@ -53,6 +58,7 @@ xcodebuild \
   -archivePath "$ARCHIVE_PATH" \
   -derivedDataPath "$DERIVED_DATA" \
   "${ARM64_XCODEBUILD_FLAGS[@]}" \
+  "${XCODEBUILD_EXTRA_FLAGS[@]}" \
   archive \
   | tail -5
 

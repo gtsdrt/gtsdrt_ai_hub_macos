@@ -217,15 +217,6 @@ final class BackendController: ObservableObject {
                 return
             }
 
-            if settings.writeDotEnvOnLaunch {
-                do {
-                    let url = try settings.writeDotEnv()
-                    append("[app] 已写入 .env：\(url.path)")
-                } catch {
-                    append("[app] 写入 .env 失败：\(error.localizedDescription)")
-                }
-            }
-
             workingDirectory = directory
             // 开发模式也必须原生 arm64：用 /usr/bin/arch -arm64 挑 arm64 切片，
             // 解释器若没有 arm64 切片（Intel-only Python）会直接报 Bad CPU type 而不是走 Rosetta

@@ -40,7 +40,7 @@ AIChatApp is an AI operations workbench that runs **entirely on your own Mac**:
 - The model reaches the outside world through **function calling** against 101 read-only
   operations tools covering Azure, Meraki, Cisco Nexus Dashboard, Serverless containers and
   DeepSeek balance;
-- AI provider keys live only in the local `.env` and the macOS Keychain — they never leave the machine.
+- App-managed AI provider keys live in the macOS Keychain and are injected into the local backend process at launch; legacy `.env` secrets are migrated and removed on first run.
 
 Three hard design constraints:
 
@@ -122,7 +122,7 @@ flowchart TB
 | **BackendController** | `AIChatApp/Sources/Services/BackendController.swift` | Locates `backend_server` (onedir > onefile > project `main.py`), starts/stops the process, `/api/health` checks, dependency self-check, log capture, orphan process cleanup |
 | **APIClient** | `AIChatApp/Sources/Services/APIClient.swift` | The single HTTP egress point; wraps all 13 endpoints and attaches the JWT |
 | **ChatViewModel** | `AIChatApp/Sources/ViewModels/ChatViewModel.swift` | Submits `chat_async`, then **polls `ai_task_status` every 2 seconds** and renders the tool-call log |
-| **AppSettings** | `AIChatApp/Sources/Services/AppSettings.swift` | Backend URL, credentials, language/font scale; writes UserDefaults and Keychain, optionally syncs back to `.env` |
+| **AppSettings** | `AIChatApp/Sources/Services/AppSettings.swift` | Non-secret settings in UserDefaults, credentials in Keychain; migrates legacy `.env` secrets on first run |
 | **FastAPI backend** | `main.py` (2802 lines) | Routing, auth, AI orchestration, tool loop, SQLite persistence |
 | **Tool registry** | `tools/__init__.py` | `default_schemas()` / `execute_tool()` / `health()` — the only three entry points, dispatching to 5 modules |
 | **Tool modules** | `tools/{azure,meraki,nexus_dashboard,container,ai}_tools.py` | Each exports `SCHEMAS` / `TOOL_NAMES` / `execute()` / `health()` |
@@ -337,15 +337,14 @@ Additionally: identical calls within one round execute only once (result reuse),
 ```
 User enters a key in Settings
    └─▶ KeychainStore (macOS Keychain)
-   └─▶ Optional: merge back into the project-root .env (other existing lines preserved)
    └─▶ Injected as environment variables when the backend process restarts:
        DEEPSEEK_API_KEY / KIMI_API_KEY / DEFAULT_AI_PROVIDER / AI_MOCK_MODE / PORT
-Environment variables take precedence over .env (pre-existing system variables are never overwritten)
+On first run, legacy .env secrets are migrated and verified in Keychain, then removed from .env;
+non-secret configuration may remain in .env.
 ```
 
-Container API keys are the convenient exception: the key is written to the Keychain **and** written
-back into `containers.json`. The backend re-reads the registry on every call, so **the change takes
-effect immediately, with no restart**.
+Container API keys also live only in Keychain; the registry stores non-secret metadata only. Keys
+are injected into the backend process, so changing one requires a backend restart.
 
 ---
 
@@ -395,10 +394,8 @@ Configuration sources, in priority order (`registry_entries()`):
 3) Legacy compatibility: ANSIBLE_EXECUTOR_URL + ANSIBLE_EXECUTOR_API_KEY → synthesized as an entry named "ansible"
 ```
 
-Key sources (inspectable via the `key_source` field): written by Settings into the Keychain **and**
-back into the registry's `api_key` > `api_key` written directly into the registry > the
-`api_key_env` / `AICHAT_CONTAINER_KEY_<UPPERCASED_NAME>` environment variable (in which case changing
-the key requires a restart).
+Key sources (inspectable via `key_source`): `api_key_env` or `AICHAT_CONTAINER_KEY_<UPPERCASED_NAME>`
+environment variables. Legacy registry `api_key` fields are migrated by the App into Keychain and removed.
 
 Allowlist evaluation (`mode: auto`, the default): explicitly listed in `allowed_tasks` → allowed;
 marked `read_only: true` by the container's `GET /tasks` → allowed; otherwise fall back to a built-in
@@ -459,7 +456,7 @@ already has local code execution. The focus is therefore **avoiding accidental e
 | Network | Binds to `127.0.0.1` by default (LAN access requires an explicit `HOST=0.0.0.0`); the client's `Info.plist` permits local networking only |
 | Authentication | Everything except `/api/login`, `/api/auth/*` and `/api/health` requires a Bearer JWT; OAuth uses PKCE / Device Flow so the client never holds a third-party secret |
 | Authorization | Google supports email/domain allowlists; GitHub supports login/email allowlists. If both are empty the login is **open** (intended for personal use) |
-| Credential storage | Keys live in the Keychain; `.env` is permission-restricted; the container registry file is mode 0600 |
+| Credential storage | App-managed credentials live in Keychain; `.env` and the container registry retain non-secret configuration only, with mode 0600 |
 | No secrets in git | `.gitignore` covers `.env*`, `*.pem`, `*.key`, `*.db`, build artifacts and `CODEX_HANDOFF.md` |
 | Least privilege for tools | Every operations tool is **read-only**; container tools block writes by default; `POST /run-ansible` is not exposed |
 | History sanitisation | Before being committed, `function_app.py` had tenant/subscription GUIDs, Key Vault endpoints and internal network names replaced with placeholders |
@@ -578,8 +575,7 @@ None affect functionality, but they are worth fixing:
    made this the safe default). The README was not updated.
 2. **Stale docstring in `main.py`**: `run_ai_with_tools()` says "`MAX_TOOL_ITERATIONS=10` by default",
    but the constant is actually 15.
-3. **Stale version in `AIChatApp/README.md`**: it says "currently `0.2.2`", while
-   `MARKETING_VERSION` is already `0.2.6`.
+3. **Version in `AIChatApp/README.md`**: keep it aligned with the current `MARKETING_VERSION`.
 4. **`function_app.py` is still in the repository** (263 KB, sanitised, not imported anywhere): fine to
    keep as history, but it would be worth adding a header line saying "archaeology only — all new work
    goes into `main.py`" so newcomers are not misled.
@@ -631,4 +627,4 @@ Error responses are uniformly `{"error": "..."}` (guaranteed by `http_exception_
 
 ### 13.3 Current version
 
-`0.2.6` (the `AIChatApp` project's `MARKETING_VERSION`, corresponding to `CFBundleVersion 8`).
+`0.2.7` (the `AIChatApp` project's `MARKETING_VERSION`, corresponding to `CFBundleVersion 9`).

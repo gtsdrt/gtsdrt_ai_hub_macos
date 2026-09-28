@@ -37,7 +37,7 @@ AIChatApp 是一个**完全跑在本机**的 AI 运维工作台：
 - 两者只通过 `http://127.0.0.1:8000/api/*` 通信；
 - 模型通过 **function calling** 调用 101 个只读运维工具，直接查 Azure / Meraki /
   Cisco Nexus Dashboard / Serverless 容器 / DeepSeek 余额；
-- AI Provider 的 Key 只存在本地 `.env` 与 macOS Keychain 里，不出机器。
+- App 管理的 AI Provider Key 保存在 macOS Keychain，只在启动后端时注入进程；旧 `.env` 密钥首次运行迁移后清除。
 
 设计上的三条硬约束：
 
@@ -118,7 +118,7 @@ flowchart TB
 | **BackendController** | `AIChatApp/Sources/Services/BackendController.swift` | 定位 `backend_server`（onedir > onefile > 项目 `main.py`）、起停进程、`/api/health` 健康检查、依赖自检、日志收集、孤儿进程清理 |
 | **APIClient** | `AIChatApp/Sources/Services/APIClient.swift` | 唯一 HTTP 出口，封装 13 个端点，统一带 JWT |
 | **ChatViewModel** | `AIChatApp/Sources/ViewModels/ChatViewModel.swift` | 提交 `chat_async` → **每 2 秒**轮询 `ai_task_status` → 渲染工具调用日志 |
-| **AppSettings** | `AIChatApp/Sources/Services/AppSettings.swift` | 后端地址、凭据、语言/字号；写 UserDefaults、Keychain，可选回写 `.env` |
+| **AppSettings** | `AIChatApp/Sources/Services/AppSettings.swift` | 非敏感配置写 UserDefaults，凭据写 Keychain；首次运行迁移旧 `.env` 密钥 |
 | **FastAPI 后端** | `main.py`（2802 行） | 路由、鉴权、AI 编排、工具循环、SQLite 持久化 |
 | **工具注册表** | `tools/__init__.py` | `default_schemas()` / `execute_tool()` / `health()` 三个入口，统一分发到 5 个模块 |
 | **工具模块** | `tools/{azure,meraki,nexus_dashboard,container,ai}_tools.py` | 每个模块导出 `SCHEMAS` / `TOOL_NAMES` / `execute()` / `health()` |
@@ -320,14 +320,14 @@ sequenceDiagram
 ```
 用户在设置页填 Key
    └─▶ KeychainStore（钥匙串）
-   └─▶ 可选：合并写回项目根 .env（保留其它已有行）
    └─▶ 重启后端进程时以环境变量注入：DEEPSEEK_API_KEY / KIMI_API_KEY /
        DEFAULT_AI_PROVIDER / AI_MOCK_MODE / PORT
-环境变量优先级 > .env 文件（已存在的系统变量不会被 .env 覆盖）
+首次运行时，旧 .env 密钥先迁移并校验 Keychain 写入，然后从 .env 删除；
+非敏感配置仍可由 .env 提供。
 ```
 
-容器 API Key 是例外中最方便的一条：写进 Keychain 的同时**回写 `containers.json`**，
-后端每次调用都重读注册表 → **改完立即生效，不用重启**。
+容器 API Key 也只保存在 Keychain；注册表只保存非敏感元数据。Keychain 密钥通过环境变量注入，
+因此更换密钥后需重启后端。
 
 ---
 
@@ -375,8 +375,8 @@ health()            -> dict            # 各分组凭据/依赖状态，供 /api
 3) 旧配置兼容：ANSIBLE_EXECUTOR_URL + ANSIBLE_EXECUTOR_API_KEY → 合成一个名为 ansible 的条目
 ```
 
-密钥来源（`key_source` 字段可查）：App 设置页写 Keychain + 回写注册表 > 直接写注册表 `api_key`
-> `api_key_env`/`AICHAT_CONTAINER_KEY_<名字大写>` 环境变量（此时改 key 需重启）。
+密钥来源（`key_source` 字段可查）：`api_key_env` 或 `AICHAT_CONTAINER_KEY_<名字大写>` 环境变量。
+旧版注册表中的 `api_key` 会由 App 迁入 Keychain 并清除。
 
 调用白名单判定（`mode: auto`，默认）：`allowed_tasks` 显式放行 → 容器 `GET /tasks` 标了
 `read_only: true` 的自动放行 → 回退内置只读名单。**写操作默认一律拦截**；
@@ -434,7 +434,7 @@ CREATE TABLE IF NOT EXISTS tasks (
 | 网络 | 默认绑定 `127.0.0.1`（要局域网访问必须显式 `HOST=0.0.0.0`）；客户端 `Info.plist` 只放行本地网络 |
 | 鉴权 | 除 `/api/login`、`/api/auth/*`、`/api/health` 外全部要求 Bearer JWT；OAuth 使用 PKCE / Device Flow，客户端不持有第三方 secret |
 | 授权 | Google 可配邮箱/域名白名单，GitHub 可配用户名/邮箱白名单；两项为空时**默认放开**（自用场景） |
-| 凭据存放 | Key 存 Keychain；`.env` 权限受限；容器注册表文件权限 0600 |
+| 凭据存放 | App 管理的凭据存 Keychain；`.env` 与容器注册表仅保留非敏感配置，权限为 0600 |
 | 密钥不入库 | `.gitignore` 覆盖 `.env*`、`*.pem`、`*.key`、`*.db`、构建产物、`CODEX_HANDOFF.md` |
 | 工具最小权限 | 所有运维工具**只读**；容器工具默认拦写操作；`POST /run-ansible` 不暴露 |
 | 历史脱敏 | `function_app.py` 入库前已把租户/订阅 GUID、Key Vault 端点、内网命名替换为占位符 |
@@ -546,7 +546,7 @@ DMG 内容 = `AIChatApp.app` + `Applications` 快捷方式 + `README.txt`。
    但 `main.py` 现在默认 `127.0.0.1`（commit `7a25d73` 改为安全默认），README 未同步。
 2. **`main.py` 文档字符串过期**：`run_ai_with_tools()` 的 docstring 写「默认 `MAX_TOOL_ITERATIONS=10`」，
    实际常量是 15。
-3. **`AIChatApp/README.md` 版本号过期**：文中写「当前 `0.2.2`」，实际 `MARKETING_VERSION` 已到 `0.2.6`。
+3. **`AIChatApp/README.md` 版本号**：按当前 `MARKETING_VERSION` 更新。
 4. **`function_app.py` 仍在仓库里**（263 KB、已脱敏、不被引用）：作为历史参考可以留，
    建议在文件头加一句「仅供考古，新功能一律加到 `main.py`」以免误导新同学。
 5. **没有 CI**：测试与 arm64 校验都靠本地脚本，容易漏。可加一个 GitHub Actions
@@ -597,4 +597,4 @@ DMG 内容 = `AIChatApp.app` + `Applications` 快捷方式 + `README.txt`。
 
 ### 13.3 当前版本
 
-`0.2.6`（`AIChatApp` 工程的 `MARKETING_VERSION`，对应 `CFBundleVersion 8`）。
+`0.2.7`（`AIChatApp` 工程的 `MARKETING_VERSION`，对应 `CFBundleVersion 9`）。

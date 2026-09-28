@@ -75,8 +75,6 @@ enum LocalizationTableNB {
         "允许的邮箱": "Tillatte e-postadresser",
         "关闭": "Lukk",
         "内嵌后端已就绪": "Innebygd backend er klar",
-        "写入 .env": "Skriv .env",
-        "写入失败：{0}": "Skriving mislyktes: {0}",
         "凭据已更新，需要重启后端生效": "Legitimasjonen er oppdatert, start backenden på nytt for at den skal gjelde",
         "切换语言后立即生效，不用重启应用。": "Trer i kraft med en gang – du trenger ikke starte appen på nytt.",
         "删除这个会话": "Slett denne samtalen",
