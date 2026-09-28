@@ -226,7 +226,7 @@ Details:
 
 | Path | Flow | Required configuration |
 |---|---|---|
-| **Local admin** (break-glass) | `POST /api/login` validates `ADMIN_USERNAME`/`ADMIN_PASSWORD` → issues a JWT | None (defaults exist) |
+| **Local admin** (break-glass) | `POST /api/login` validates `ADMIN_USERNAME`/`ADMIN_PASSWORD` → issues a JWT | App Settings manages the username and password; standalone backend runs may still use environment variables / `.env` |
 | **Google OAuth** | `POST /auth/google/start` returns an authorization URL (Authorization Code + **PKCE**) → system browser authorizes → `GET /auth/google/callback` validates state and the email/domain allowlist → an HTML page reports success → the client polls `GET /auth/google/status` to collect the JWT | `GOOGLE_CLIENT_ID` (+ optional `GOOGLE_ALLOWED_EMAILS`/`DOMAINS`) |
 | **GitHub Device Flow** | `POST /auth/github/start` returns a `user_code` (the App copies it to the clipboard and opens `github.com/login/device`) → the client polls `GET /auth/github/status`; the backend exchanges the device code, reads the identity and checks the allowlist → returns a backend JWT | `GITHUB_CLIENT_ID` (+ optional `GITHUB_ALLOWED_LOGINS`/`EMAILS`) |
 
@@ -335,16 +335,18 @@ Additionally: identical calls within one round execute only once (result reuse),
 ### 5.6 The settings write path
 
 ```
-User enters a key in Settings
+User saves Settings
    └─▶ KeychainStore (macOS Keychain)
-   └─▶ Injected as environment variables when the backend process restarts:
-       DEEPSEEK_API_KEY / KIMI_API_KEY / DEFAULT_AI_PROVIDER / AI_MOCK_MODE / PORT
-On first run, legacy .env secrets are migrated and verified in Keychain, then removed from .env;
-non-secret configuration may remain in .env.
+   └─▶ Backend launch injects Keychain credentials, ADMIN_USERNAME and HOST=127.0.0.1
+   └─▶ AICHAT_ENV_FILE points to the project-root .env
+On first run, legacy .env secrets are migrated and read-back verified, then removed; non-secret settings remain.
 ```
 
-Container API keys also live only in Keychain; the registry stores non-secret metadata only. Keys
-are injected into the backend process, so changing one requires a backend restart.
+The packaged backend no longer looks for `.env` inside the App Bundle; the App sets
+`AICHAT_ENV_FILE` to the project configuration. For App-managed credentials, `ADMIN_PASSWORD`, the
+JWT secret, provider keys and tool keys come from Keychain; the admin username is stored in
+UserDefaults. Container API keys also live only in Keychain; the registry stores non-secret metadata
+only. Keys are injected into the backend process, so changing one requires a backend restart.
 
 ---
 
@@ -443,6 +445,10 @@ The full annotated list is in [`.env.example`](../.env.example); the most import
 | `AICHAT_DB_PATH` / `AICHAT_CONTAINERS_FILE` | Data file locations |
 | `MAX_TOOL_ITERATIONS` / `MAX_IDENTICAL_TOOL_CALLS` / `TOOLS_ENABLED_BY_DEFAULT` | Tool-loop behaviour tuning |
 
+For an App-launched backend, Settings supplies `ADMIN_USERNAME` and Keychain injects
+`ADMIN_PASSWORD` / `JWT_SECRET`; `HOST` is forced to `127.0.0.1` and cannot be overridden by `.env`.
+When running `main.py` directly, configuration still comes from the process environment and `.env`.
+
 ---
 
 ## 8. Authentication and security model
@@ -453,7 +459,7 @@ already has local code execution. The focus is therefore **avoiding accidental e
 
 | Surface | Mitigation |
 |---|---|
-| Network | Binds to `127.0.0.1` by default (LAN access requires an explicit `HOST=0.0.0.0`); the client's `Info.plist` permits local networking only |
+| Network | App-launched backends are forced to `127.0.0.1`; direct `main.py` runs default to loopback but may explicitly override `HOST`; the client's `Info.plist` permits local networking only |
 | Authentication | Everything except `/api/login`, `/api/auth/*` and `/api/health` requires a Bearer JWT; OAuth uses PKCE / Device Flow so the client never holds a third-party secret |
 | Authorization | Google supports email/domain allowlists; GitHub supports login/email allowlists. If both are empty the login is **open** (intended for personal use) |
 | Credential storage | App-managed credentials live in Keychain; `.env` and the container registry retain non-secret configuration only, with mode 0600 |
@@ -627,4 +633,6 @@ Error responses are uniformly `{"error": "..."}` (guaranteed by `http_exception_
 
 ### 13.3 Current version
 
-`0.2.7` (the `AIChatApp` project's `MARKETING_VERSION`, corresponding to `CFBundleVersion 9`).
+`0.2.7` (the `AIChatApp` project's `MARKETING_VERSION`, corresponding to `CFBundleVersion 9`): Keychain
+credential migration, in-App local admin management, external `.env` support for the packaged backend,
+and enforced loopback binding.

@@ -221,7 +221,7 @@ sequenceDiagram
 
 | 路径 | 流程 | 需要的配置 |
 |---|---|---|
-| **本地管理员**（应急） | `POST /api/login` 校验 `ADMIN_USERNAME`/`ADMIN_PASSWORD` → 签发 JWT | 无（有默认值） |
+| **本地管理员**（应急） | `POST /api/login` 校验 `ADMIN_USERNAME`/`ADMIN_PASSWORD` → 签发 JWT | App 设置页分别管理用户名与密码；单独运行后端时仍可用环境变量 / `.env` 配置 |
 | **Google OAuth** | `POST /auth/google/start` 返回授权 URL（Authorization Code + **PKCE**）→ 系统浏览器授权 → `GET /auth/google/callback` 校验 state 与邮箱白名单 → 页面显示成功 → 客户端轮询 `GET /auth/google/status` 领取 JWT | `GOOGLE_CLIENT_ID`（+ 可选 `GOOGLE_ALLOWED_EMAILS/DOMAINS`） |
 | **GitHub Device Flow** | `POST /auth/github/start` 返回 `user_code`（App 自动复制到剪贴板并打开 `github.com/login/device`）→ 客户端轮询 `GET /auth/github/status`，后端向 GitHub 换 token、读身份、校验白名单 → 返回后端 JWT | `GITHUB_CLIENT_ID`（+ 可选 `GITHUB_ALLOWED_LOGINS/EMAILS`） |
 
@@ -318,16 +318,17 @@ sequenceDiagram
 ### 5.6 设置页写入链路
 
 ```
-用户在设置页填 Key
+用户在设置页保存设置
    └─▶ KeychainStore（钥匙串）
-   └─▶ 重启后端进程时以环境变量注入：DEEPSEEK_API_KEY / KIMI_API_KEY /
-       DEFAULT_AI_PROVIDER / AI_MOCK_MODE / PORT
-首次运行时，旧 .env 密钥先迁移并校验 Keychain 写入，然后从 .env 删除；
-非敏感配置仍可由 .env 提供。
+   └─▶ 启动后端时注入 Keychain 凭据、ADMIN_USERNAME 与 HOST=127.0.0.1
+   └─▶ 以 AICHAT_ENV_FILE 指向项目根目录 .env
+首次运行时，旧 .env 秘密项先迁移并读回验证，再从文件删除；非敏感配置保留。
 ```
 
-容器 API Key 也只保存在 Keychain；注册表只保存非敏感元数据。Keychain 密钥通过环境变量注入，
-因此更换密钥后需重启后端。
+打包版后端不再从 App Bundle 内查找 `.env`；App 通过 `AICHAT_ENV_FILE` 指定项目配置文件。
+App 管理的 `ADMIN_PASSWORD`、JWT、Provider 和工具密钥来自 Keychain，管理员用户名存
+UserDefaults。容器 API Key 也只保存在 Keychain；注册表只保存非敏感元数据。Keychain 密钥
+通过环境变量注入，因此更换密钥后需重启后端。
 
 ---
 
@@ -422,6 +423,10 @@ CREATE TABLE IF NOT EXISTS tasks (
 | `AICHAT_DB_PATH` / `AICHAT_CONTAINERS_FILE` | 数据文件位置 |
 | `MAX_TOOL_ITERATIONS` / `MAX_IDENTICAL_TOOL_CALLS` / `TOOLS_ENABLED_BY_DEFAULT` | 工具循环行为调优 |
 
+AIChatApp 启动的本地后端由设置页提供 `ADMIN_USERNAME`，并从 Keychain 注入
+`ADMIN_PASSWORD` / `JWT_SECRET`；`HOST` 固定为 `127.0.0.1`，不受 `.env` 中的监听地址覆盖。
+直接从终端运行 `main.py` 时则仍按环境变量及 `.env` 配置。
+
 ---
 
 ## 8. 认证与安全模型
@@ -431,7 +436,7 @@ CREATE TABLE IF NOT EXISTS tasks (
 
 | 面 | 措施 |
 |---|---|
-| 网络 | 默认绑定 `127.0.0.1`（要局域网访问必须显式 `HOST=0.0.0.0`）；客户端 `Info.plist` 只放行本地网络 |
+| 网络 | App 启动的后端强制绑定 `127.0.0.1`；直接运行 `main.py` 时默认回环，也可显式用 `HOST` 改绑；客户端 `Info.plist` 只放行本地网络 |
 | 鉴权 | 除 `/api/login`、`/api/auth/*`、`/api/health` 外全部要求 Bearer JWT；OAuth 使用 PKCE / Device Flow，客户端不持有第三方 secret |
 | 授权 | Google 可配邮箱/域名白名单，GitHub 可配用户名/邮箱白名单；两项为空时**默认放开**（自用场景） |
 | 凭据存放 | App 管理的凭据存 Keychain；`.env` 与容器注册表仅保留非敏感配置，权限为 0600 |
@@ -597,4 +602,5 @@ DMG 内容 = `AIChatApp.app` + `Applications` 快捷方式 + `README.txt`。
 
 ### 13.3 当前版本
 
-`0.2.7`（`AIChatApp` 工程的 `MARKETING_VERSION`，对应 `CFBundleVersion 9`）。
+`0.2.7`（`AIChatApp` 工程的 `MARKETING_VERSION`，对应 `CFBundleVersion 9`）：Keychain 凭据迁移、
+App 内管理本地管理员账号、打包后端读取外部 `.env`，并强制回环监听。
