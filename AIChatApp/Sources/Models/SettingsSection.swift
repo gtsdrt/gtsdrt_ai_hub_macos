@@ -3,6 +3,7 @@ import Foundation
 /// 设置页里可以跳转 / 滚动到的区域
 enum SettingsSection: String, Identifiable, Hashable, CaseIterable {
     case language
+    case updates
     case backend
     case azure
     case meraki
@@ -17,6 +18,7 @@ enum SettingsSection: String, Identifiable, Hashable, CaseIterable {
     var title: String {
         switch self {
         case .language: return L("界面语言")
+        case .updates: return L("软件更新")
         case .backend: return L("本地 Python 后端")
         case .azure: return L("Azure 工具凭据")
         case .meraki: return L("Meraki 工具凭据")

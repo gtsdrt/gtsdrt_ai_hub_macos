@@ -20,6 +20,7 @@ struct SettingsView: View {
     @State private var showingAdvancedOptions = false
     @Environment(\.appFontScale) private var fontScale
     @Environment(\.loc) private var loc
+    @EnvironmentObject private var updates: AppUpdater
 
     init(session: SessionStore) {
         self.init(session: session, scrollTarget: nil, onClose: nil)
@@ -50,6 +51,7 @@ struct SettingsView: View {
                     }
 
                     languageSection.id(SettingsSection.language)
+                    updateSection.id(SettingsSection.updates)
                     backendSection.id(SettingsSection.backend)
                     azureSection.id(SettingsSection.azure)
                     merakiSection.id(SettingsSection.meraki)
@@ -129,6 +131,32 @@ struct SettingsView: View {
                 }
 
                 Text(loc.t("切换语言后立即生效，不用重启应用。"))
+                    .appFont(.caption)
+                    .foregroundStyle(.secondary)
+            }
+            .padding(6)
+        }
+    }
+
+    private var updateSection: some View {
+        SettingsSectionBox(title: loc.t("软件更新")) {
+            VStack(alignment: .leading, spacing: 10) {
+                Text(loc.t("当前版本：{0}（构建 {1}）",
+                            Bundle.main.object(forInfoDictionaryKey: "CFBundleShortVersionString") as? String ?? "—",
+                            Bundle.main.object(forInfoDictionaryKey: "CFBundleVersion") as? String ?? "—"))
+                Toggle(loc.t("自动检查更新"), isOn: $updates.automaticallyChecksForUpdates)
+                Toggle(loc.t("自动下载并在退出时安装更新"), isOn: $updates.automaticallyDownloadsUpdates)
+                    .disabled(!updates.allowsAutomaticUpdates)
+                HStack {
+                    Button(loc.t("检查更新…")) { updates.checkForUpdates() }
+                        .disabled(!updates.canCheckForUpdates)
+                    if let date = updates.lastUpdateCheckDate {
+                        Text(loc.t("上次检查：{0}", date.formatted(date: .abbreviated, time: .shortened)))
+                            .foregroundStyle(.secondary)
+                            .appFont(.caption)
+                    }
+                }
+                Text(loc.t("每小时从 GitHub 检查更新，验证签名后更新客户端和内嵌后端。"))
                     .appFont(.caption)
                     .foregroundStyle(.secondary)
             }

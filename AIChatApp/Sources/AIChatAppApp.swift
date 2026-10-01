@@ -4,17 +4,23 @@ import SwiftUI
 struct AIChatAppApp: App {
     @NSApplicationDelegateAdaptor(AppDelegate.self) private var appDelegate
     @StateObject private var session = SessionStore()
+    @StateObject private var updates = AppUpdater()
 
     var body: some Scene {
         WindowGroup(L("本地 AI 对话")) {
             RootView(session: session)
                 .environmentObject(session)
+                .environmentObject(updates)
                 .onAppear {
                     // 退出时要能主动收掉后端进程
                     appDelegate.session = session
                 }
         }
         .commands {
+            CommandGroup(after: .appInfo) {
+                Button(L("检查更新…")) { updates.checkForUpdates() }
+                    .disabled(!updates.canCheckForUpdates)
+            }
             // 这是一个单窗口工具类应用，去掉「新建」菜单项
             CommandGroup(replacing: .newItem) {}
 

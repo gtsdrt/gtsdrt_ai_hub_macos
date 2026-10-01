@@ -129,7 +129,28 @@ open .xcbuild/Build/Products/Debug/AIChatApp.app
 .venv/bin/python test_github_auth.py     # GitHub Device Flow
 ```
 
-### 5. 打包
+### 5. 自动发布与应用内更新
+
+从 0.3 系列开始，App 使用 [Sparkle](https://sparkle-project.org/documentation/) 检查并安装更新：
+
+- 默认每小时检查 GitHub Releases，自动下载，在退出时安装；也可在 App 菜单或「设置 → 软件更新」手动检查、关闭自动更新。
+- 更新整个 `.app`，包括 Swift 客户端和内嵌 Python 后端。退出前沿用已有后端清理流程；聊天数据库、设置和 Keychain 保存在 App 外。
+- 主分支 `main` 的应用代码、依赖或构建脚本变化触发 `.github/workflows/macos-release.yml`，由 GitHub 的 Apple Silicon runner 构建和发布，无需本地打包。仅文档改动不触发发布；可从 Actions 手动运行。
+- PR 自动构建并上传验证产物，不发布更新、不读取更新签名私钥。
+- 版本号自动生成：源工程版本的前两段 + Actions 运行编号，例如 `0.3.12`；构建号为 `10.<运行编号>.<重试次数>`。重试会产生不同的 release tag。
+- 发布前检查原生 arm64 后端健康状态、App 构建、代码签名和更新包的 Ed25519 签名。先上传为 draft，所有文件就绪后才设为 latest。
+
+**一次性启用：** 仓库 Actions secret `SPARKLE_PRIVATE_KEY` 必须是与 `Info.plist` 中 `SUPublicEDKey` 对应的私钥。当前机器的私钥备份为 `.sparkle/eddsa-private.key`（不入 Git）；请保留安全备份，不要重新生成或随意更换公钥。配置命令：
+
+```bash
+gh secret set SPARKLE_PRIVATE_KEY < .sparkle/eddsa-private.key
+```
+
+旧版 0.2.7 及之前没有更新器，需要从 Releases **手动安装一次 0.3 系列**，此后使用应用内更新。当前 CI 沿用 ad-hoc 分发，尚无 Developer ID / Apple 公证；首装仍受 Gatekeeper 限制。App、Python 后端以及 Sparkle framework/helper 均保持原生 arm64。
+
+流程与维护说明见 [docs/AUTO_UPDATE.md](docs/AUTO_UPDATE.md)。
+
+### 6. 本地打包（开发调试）
 
 ```bash
 # 后端 → 单文件可执行（arm64）

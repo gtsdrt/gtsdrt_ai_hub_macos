@@ -4,6 +4,13 @@ import Foundation
 /// key = 源码里写的中文原文（`{0}` / `{1}` 是占位符，见 Localizer.t）
 enum LocalizationTableEN {
     static let table: [String: String] = [
+        "检查更新…": "Check for Updates…",
+        "软件更新": "Software Updates",
+        "当前版本：{0}（构建 {1}）": "Current version: {0} (build {1})",
+        "自动检查更新": "Automatically check for updates",
+        "自动下载并在退出时安装更新": "Automatically download and install updates on quit",
+        "上次检查：{0}": "Last checked: {0}",
+        "每小时从 GitHub 检查更新，验证签名后更新客户端和内嵌后端。": "Check GitHub hourly and update the app and bundled backend after verifying signatures.",
         "AI Provider（密钥存 Keychain，启动时传给 Python）": "AI Provider (keys live in the Keychain and are passed to Python on launch)",
         "AI 正在执行工具调用，可能需要 1-2 分钟": "The AI is running tool calls; this can take 1–2 minutes",
         "Azure Foundry 填 https://<资源名>.openai.azure.com/openai/v1": "For Azure Foundry enter https://<resource-name>.openai.azure.com/openai/v1",

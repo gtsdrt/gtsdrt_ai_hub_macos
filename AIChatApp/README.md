@@ -137,7 +137,7 @@ DMG 内容是 `AIChatApp.app` + 指向 `/Applications` 的快捷方式 + `README
 
 - 首次打开会被 Gatekeeper 拦一次，必须右键「打开」（或到「系统设置 → 隐私与安全性」点「仍要打开」）；
 - 把这台机器上打的 DMG 拷给别人，对方也要重复这一步；
-- DMG 没有做公证（notarization），不能静默安装，也不会自动更新；
+- DMG 没有做 Apple 公证（notarization）；0.3 系列已接入 Sparkle，使用 Ed25519 签名进行应用内更新，首次安装仍需手动处理 Gatekeeper；
 - 内嵌后端会监听本机端口并写临时目录，个别企业终端安全软件会额外弹提示。
 
 ### 换成正式签名（可选）
@@ -211,3 +211,7 @@ Ansible、用量统计这类都是**增量**功能，加在后端即可，前端
 3. 前端只有在要展示新数据时才需要动 UI —— 工具调用的展示已经通用化：
    后端返回的 `tool_calls_log` 会自动渲染成气泡下方的工具卡片，不用为每个新工具写界面。
 4. 重新打包：`./scripts/build_dmg.sh`（自动同步最新 `dist/backend_server` → 重新生成 DMG）。
+
+## 自动发布与更新
+
+主分支代码变化后由 GitHub Actions 自动构建 Swift 客户端和 Python 后端，发布 ZIP、DMG 与已签名 appcast。App 默认每小时检查，在退出时安装；菜单和设置页提供手动检查及开关。旧版需手动安装一次新版本。详见 [自动更新说明](../docs/AUTO_UPDATE.md)。
