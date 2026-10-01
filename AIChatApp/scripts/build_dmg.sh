@@ -9,6 +9,8 @@
 #   CODESIGN_IDENTITY="Developer ID Application: xxx (TEAMID)"  指定签名证书
 #   AICHAT_ARM64_OVERRIDE=1         仅自动化用：允许在 Rosetta 终端里继续（产物仍会被 lipo 硬校验）
 #   XCODEBUILD_OTHER_SWIFT_FLAGS="-disable-sandbox"  仅受限构建环境需要
+#   RELEASE_VERSION / RELEASE_BUILD  CI 自动设置版本号和构建号
+#   CI_ADHOC_SIGN=1                 无 Developer ID 时的 CI 分发（关闭 library validation）
 #
 # 产物：项目根目录 AIChatApp-<版本号>.dmg（版本号取自构建出来的 Info.plist）
 
@@ -39,6 +41,15 @@ XCODEBUILD_EXTRA_FLAGS=()
 if [ -n "${XCODEBUILD_OTHER_SWIFT_FLAGS:-}" ]; then
   XCODEBUILD_EXTRA_FLAGS+=("OTHER_SWIFT_FLAGS=${XCODEBUILD_OTHER_SWIFT_FLAGS}")
 fi
+if [ -n "${RELEASE_VERSION:-}" ]; then
+  XCODEBUILD_EXTRA_FLAGS+=("MARKETING_VERSION=$RELEASE_VERSION")
+fi
+if [ -n "${RELEASE_BUILD:-}" ]; then
+  XCODEBUILD_EXTRA_FLAGS+=("CURRENT_PROJECT_VERSION=$RELEASE_BUILD")
+fi
+if [ "${CI_ADHOC_SIGN:-0}" = "1" ]; then
+  XCODEBUILD_EXTRA_FLAGS+=(CODE_SIGNING_ALLOWED=NO ENABLE_HARDENED_RUNTIME=NO)
+fi
 
 GREEN='\033[0;32m'; YELLOW='\033[1;33m'; RED='\033[0;31m'; NC='\033[0m'
 step() { printf "${GREEN}==>${NC} %s\n" "$*"; }
@@ -63,6 +74,9 @@ xcodebuild \
   | tail -5
 
 [ -d "$APP_SRC" ] || fail "archive 里没找到 $APP_SRC"
+
+step "准备 Sparkle arm64 framework 与 helper 签名"
+bash "$REPO_DIR/scripts/prepare_sparkle.sh" "$APP_SRC/Contents/Frameworks/Sparkle.framework"
 
 # 架构硬校验：主程序 + 内嵌后端 + 整个 bundle 都不允许出现 x86_64
 step "校验产物架构（纯 arm64）"
@@ -109,7 +123,11 @@ DETECTED_IDENTITY=$(security find-identity -v -p codesigning 2>/dev/null \
   | sed -n 's/.*"\(Developer ID Application: .*\)"/\1/p' | head -1)
 IDENTITY="${CODESIGN_IDENTITY:-$DETECTED_IDENTITY}"
 
-if [ "${SKIP_CODESIGN:-0}" = "1" ]; then
+if [ "${CI_ADHOC_SIGN:-0}" = "1" ]; then
+  step "CI ad-hoc 签名（Sparkle 更新另有 Ed25519 签名）"
+  codesign --force --sign - --timestamp=none "$STAGING_DIR/$APP_NAME.app"
+  codesign --verify --deep --strict --verbose=2 "$STAGING_DIR/$APP_NAME.app"
+elif [ "${SKIP_CODESIGN:-0}" = "1" ]; then
   warn "SKIP_CODESIGN=1：跳过签名。未签名版本首次打开需要右键 →「打开」。"
 elif [ -z "$IDENTITY" ]; then
   warn "没找到 Developer ID 证书：跳过签名。未签名版本首次打开需要右键 →「打开」。"
@@ -146,6 +164,10 @@ else
   fi
 
   # 外层 app 用 hardened runtime；不加 --deep，避免把内嵌后端重签成 runtime
+  # Sparkle 动态库和它的 helper 必须与宿主使用同一 Developer ID（library validation）。
+  if [ -d "$APP/Contents/Frameworks/Sparkle.framework" ]; then
+    bash "$REPO_DIR/scripts/prepare_sparkle.sh" "$APP/Contents/Frameworks/Sparkle.framework" "$IDENTITY"
+  fi
   codesign --force --options runtime --timestamp --sign "$IDENTITY" "$APP"
 
   step "验证签名"

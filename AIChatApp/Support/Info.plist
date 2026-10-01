@@ -33,6 +33,18 @@
 	<true/>
 	<key>NSPrincipalClass</key>
 	<string>NSApplication</string>
+	<key>SUFeedURL</key>
+	<string>https://github.com/gtsdrt/gtsdrt_ai_hub_macos/releases/latest/download/appcast.xml</string>
+	<key>SUPublicEDKey</key>
+	<string>XrLaqBXyJhdA8B8mLwSMUwqZUgwmoHZU5tj+SCRVpcY=</string>
+	<key>SURequireSignedFeed</key>
+	<true/>
+	<key>SUEnableAutomaticChecks</key>
+	<true/>
+	<key>SUAutomaticallyUpdate</key>
+	<true/>
+	<key>SUScheduledCheckInterval</key>
+	<integer>3600</integer>
 	<key>NSHumanReadableCopyright</key>
 	<string></string>
 	<key>NSAppTransportSecurity</key>

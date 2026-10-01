@@ -8,6 +8,8 @@
 *.key
 *credentials*.json
 secrets*.json
+.sparkle/
+release-output/
 
 # ---------- 内部文档（只保留在本地，不进公开仓库） ----------
 CODEX_HANDOFF.md
