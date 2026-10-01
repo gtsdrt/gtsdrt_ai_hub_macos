@@ -17,6 +17,14 @@ export CI_ADHOC_SIGN=1
 bash AIChatApp/scripts/build_dmg.sh
 mkdir -p release-output
 APP="AIChatApp/build/dmg-staging/AIChatApp.app"
+SDK_FRAMEWORK="$(find AIChatApp/build/dmg-derived/SourcePackages/artifacts -type d -name Sparkle.framework | head -1)"
+[ -n "$SDK_FRAMEWORK" ] || { echo 'Missing Sparkle SDK headers' >&2; exit 1; }
+# Embedded frameworks have headers removed; compile against the resolved SDK,
+# then run against the thinned/re-signed framework inside the distribution App.
+swiftc scripts/verify_updater.swift -F "$(dirname "$SDK_FRAMEWORK")" -framework Sparkle \
+    -Xlinker -rpath -Xlinker "$REPO_DIR/$APP/Contents/Frameworks" \
+    -o release-output/verify-updater
+release-output/verify-updater "$REPO_DIR/$APP"
 cp "AIChatApp/AIChatApp-$RELEASE_VERSION.dmg" release-output/
 /usr/bin/ditto -c -k --sequesterRsrc --keepParent "$APP" "release-output/AIChatApp-$RELEASE_VERSION.zip"
 

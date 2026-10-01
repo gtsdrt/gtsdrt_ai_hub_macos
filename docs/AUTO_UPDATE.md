@@ -33,6 +33,7 @@
 - PR 使用与发布相同的 arm64、PyInstaller、Xcode 和 DMG 构建流程；只上传 artifact，不发布。
 - `scripts/build_release.sh` 确认原生 Python 架构，并运行现有 `verify_backend_binary.py` 检查打包后端的 `/api/health` 和进程退出。
 - 原有架构闸门继续要求整个 App/后端纯 arm64。`prepare_sparkle.sh` 将 framework/helper 裁剪为 arm64，从内到外重签名，并保留 helper 的 entitlements，修复 Xcode 移除头文件导致的原签名失效。
+- `verify_updater.swift` 使用打包后的 Sparkle framework 和 Info.plist 实际初始化更新器，在发布前拦截无效配置；不弹 UI、不请求更新。
 - `generate_appcast` 从真实 App 提取版本、最低系统及硬件要求，签署 ZIP/feed；`sign_update --verify` 验证 feed。
 - `verify_update_feed.py` 独立使用内嵌公钥验证 ZIP，检查实际版本、文件大小和 GitHub HTTPS 地址。
 - 若 Actions 报 `Missing repository secret SPARKLE_PRIVATE_KEY`，配置 secret 后重跑。若签名错误，检查私钥与 `Info.plist` 公钥对应。
