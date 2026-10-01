@@ -7,6 +7,8 @@
 > End-user install/usage instructions live in the root [`README.md`](../README.md);
 > client-specific details live in [`AIChatApp/README.md`](../AIChatApp/README.md).
 >
+> For automatic releases, deployment, and updates, see [`AUTO_UPDATE.en.md`](AUTO_UPDATE.en.md) ([中文](AUTO_UPDATE.md)).
+>
 > 中文版：[`ARCHITECTURE.md`](ARCHITECTURE.md)
 
 ---

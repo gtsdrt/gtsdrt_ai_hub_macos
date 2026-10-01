@@ -34,8 +34,7 @@
 
 - 系统要求：macOS 13+，**Apple Silicon（M 系列）**；Intel Mac 无法运行（本项目只发布 arm64）
 - 内嵌后端自带 101 个工具，**不需要**另行安装 Python 或依赖
-- **首次打开会被 Gatekeeper 拦截**（发布包是 ad-hoc 签名、未经 Apple 公证）：右键（或 Control + 点击）App → **打开** → 弹窗里再点一次「打开」；或执行
-  `xattr -dr com.apple.quarantine /Applications/AIChatApp.app`
+- **首次打开会被 Gatekeeper 拦截**（发布包是 ad-hoc 签名、未经 Apple 公证）：尝试打开后关闭提示，再到 **系统设置 → 隐私与安全性 → 仍要打开（Open Anyway）**，确认 AIChatApp 并按提示验证登录身份。较新的 macOS 不能仅靠右键「打开」放行。仅为你自己构建或确认来自本项目 Releases 的 App 建立例外，详见 [Apple 的打开说明](https://support.apple.com/en-us/102445)。
 - 建议用 Release 页面公布的 SHA-256 核对下载文件
 
 想从源码运行、或自己打包 → 见下方「快速开始」。
@@ -135,7 +134,7 @@ open .xcbuild/Build/Products/Debug/AIChatApp.app
 
 - 默认每小时检查 GitHub Releases，自动下载，在退出时安装；也可在 App 菜单或「设置 → 软件更新」手动检查、关闭自动更新。
 - 更新整个 `.app`，包括 Swift 客户端和内嵌 Python 后端。退出前沿用已有后端清理流程；聊天数据库、设置和 Keychain 保存在 App 外。
-- 主分支 `main` 的应用代码、依赖或构建脚本变化触发 `.github/workflows/macos-release.yml`，由 GitHub 的 Apple Silicon runner 构建和发布，无需本地打包。仅文档改动不触发发布；可从 Actions 手动运行。
+- 主分支 `main` 的应用代码、依赖或构建脚本变化触发 `.github/workflows/macos-release.yml`，由 GitHub 的 Apple Silicon runner 构建和发布，无需本地打包。只改 `docs/` 或根 README 不触发发布（`AIChatApp/README.md` 仍匹配构建路径）；可从 Actions 手动运行。
 - PR 自动构建并上传验证产物，不发布更新、不读取更新签名私钥。
 - 版本号自动生成：源工程版本的前两段 + Actions 运行编号，例如 `0.3.12`；构建号为 `10.<运行编号>.<重试次数>`。重试会产生不同的 release tag。
 - 发布前检查原生 arm64 后端健康状态、App 构建、代码签名和更新包的 Ed25519 签名。先上传为 draft，所有文件就绪后才设为 latest。
@@ -148,7 +147,7 @@ gh secret set SPARKLE_PRIVATE_KEY < .sparkle/eddsa-private.key
 
 旧版 0.2.7 及之前没有更新器，需要从 Releases **手动安装一次 0.3 系列**，此后使用应用内更新。当前 CI 沿用 ad-hoc 分发，尚无 Developer ID / Apple 公证；首装仍受 Gatekeeper 限制。App、Python 后端以及 Sparkle framework/helper 均保持原生 arm64。
 
-流程与维护说明见 [docs/AUTO_UPDATE.md](docs/AUTO_UPDATE.md)。
+完整部署、更新记录、首次安装、发版、密钥维护与故障排查见 **[中文说明](docs/AUTO_UPDATE.md) · [English deployment and update guide](docs/AUTO_UPDATE.en.md)**。
 
 ### 6. 本地打包（开发调试）
 

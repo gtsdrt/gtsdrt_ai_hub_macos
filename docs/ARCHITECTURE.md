@@ -6,6 +6,8 @@
 > 面向普通用户的安装使用说明见根目录 [`README.md`](../README.md)；
 > 客户端细节见 [`AIChatApp/README.md`](../AIChatApp/README.md)。
 >
+> 自动发布、部署和更新见 [`AUTO_UPDATE.md`](AUTO_UPDATE.md)（[English](AUTO_UPDATE.en.md)）。
+>
 > English version: [`ARCHITECTURE.en.md`](ARCHITECTURE.en.md)
 
 ---
