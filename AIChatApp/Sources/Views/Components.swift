@@ -20,39 +20,6 @@ struct SettingsSectionBox<Content: View>: View {
     }
 }
 
-/// 「左侧标题 + 右侧控件」的一行设置项
-struct SettingRow<Content: View>: View {
-    @Environment(\.appFontScale) private var fontScale
-
-    let title: String
-    @ViewBuilder var content: Content
-
-    var body: some View {
-        HStack(alignment: .firstTextBaseline, spacing: 10) {
-            Text(title)
-                .foregroundStyle(.secondary)
-                .frame(width: CGFloat(132).appScaled(by: fontScale), alignment: .leading)
-            content
-        }
-    }
-}
-
-/// 登录页用的竖排字段
-struct LabeledField<Content: View>: View {
-    let title: String
-    @ViewBuilder var content: Content
-
-    var body: some View {
-        VStack(alignment: .leading, spacing: 4) {
-            Text(title)
-                .appFont(.caption)
-                .foregroundStyle(.secondary)
-            content
-                .textFieldStyle(.roundedBorder)
-        }
-    }
-}
-
 /// 顶部状态小圆点 + 文案
 struct StatusBadge: View {
     let text: String
