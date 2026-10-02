@@ -171,7 +171,7 @@ struct SettingsView: View {
             VStack(alignment: .leading, spacing: 10) {
                 SettingRow(title: loc.t("后端地址")) {
                     TextField("http://127.0.0.1:8000", text: $settings.backendBaseURL)
-                        .textFieldStyle(.roundedBorder)
+                        .appTextField()
                 }
 
                 Toggle(loc.t("启动应用时自动拉起本地后端"), isOn: $settings.autoStartBackend)
@@ -267,7 +267,7 @@ struct SettingsView: View {
                 SettingRow(title: loc.t("项目目录")) {
                     HStack(spacing: 8) {
                         TextField("/Users/you/Documents/MyMacApp", text: $settings.projectDirectory)
-                            .textFieldStyle(.roundedBorder)
+                            .appTextField()
                         Button(loc.t("选择…")) { chooseProjectDirectory() }
                     }
                 }
@@ -275,7 +275,7 @@ struct SettingsView: View {
                 SettingRow(title: loc.t("Python 解释器")) {
                     HStack(spacing: 8) {
                         TextField("/path/to/.venv/bin/python", text: $settings.pythonPath)
-                            .textFieldStyle(.roundedBorder)
+                            .appTextField()
                         Button(loc.t("自动探测")) {
                             settings.pythonPath = AppSettings.detectPythonPath(projectDirectory: settings.projectDirectory)
                         }
@@ -320,7 +320,7 @@ struct SettingsView: View {
                 SettingRow(title: "Tenant ID") {
                     HStack(spacing: 6) {
                         TextField(loc.t("租户 ID"), text: $settings.azureTenantID)
-                            .textFieldStyle(.roundedBorder)
+                            .appTextField()
                         FieldHelpIcon(help: loc.t("Azure Portal → Microsoft Entra ID → 概述 → 租户 ID"))
                     }
                 }
@@ -328,7 +328,7 @@ struct SettingsView: View {
                 SettingRow(title: "Client ID") {
                     HStack(spacing: 6) {
                         TextField(loc.t("应用（客户端）ID"), text: $settings.azureClientID)
-                            .textFieldStyle(.roundedBorder)
+                            .appTextField()
                         FieldHelpIcon(help: loc.t("Azure Portal → 应用注册 → 你的应用 → 应用程序(客户端) ID"))
                     }
                 }
@@ -336,7 +336,7 @@ struct SettingsView: View {
                 SettingRow(title: "Client Secret") {
                     HStack(spacing: 6) {
                         SecureField(loc.t("客户端密码的 Value"), text: $settings.azureClientSecret)
-                            .textFieldStyle(.roundedBorder)
+                            .appTextField()
                         FieldHelpIcon(help: loc.t("应用注册 → 证书和密码 → 新客户端密码（复制 Value，不是 Secret ID）"))
                     }
                 }
@@ -344,7 +344,7 @@ struct SettingsView: View {
                 SettingRow(title: "Subscription ID") {
                     HStack(spacing: 6) {
                         TextField(loc.t("默认订阅 ID（可留空）"), text: $settings.azureSubscriptionID)
-                            .textFieldStyle(.roundedBorder)
+                            .appTextField()
                         FieldHelpIcon(help: loc.t("Azure Portal → 订阅 → 订阅 ID"))
                     }
                 }
@@ -409,7 +409,7 @@ struct SettingsView: View {
                 SettingRow(title: "Meraki API Key") {
                     HStack(spacing: 6) {
                         SecureField("Dashboard API Key", text: $settings.merakiAPIKey)
-                            .textFieldStyle(.roundedBorder)
+                            .appTextField()
                         FieldHelpIcon(help: "Meraki Dashboard → Organization → Settings → Dashboard API access → Generate API key")
                     }
                 }
@@ -451,7 +451,7 @@ struct SettingsView: View {
                 SettingRow(title: "ND_BASE_URL") {
                     HStack(spacing: 6) {
                         TextField("https://nd.example.com", text: $settings.ndBaseURL)
-                            .textFieldStyle(.roundedBorder)
+                            .appTextField()
                         FieldHelpIcon(help: loc.t("Nexus Dashboard 集群地址：只填主机名/IP，不要带 /api/v1/...（后端自动拼 Infra 与 Manage 两套基地址）"))
                     }
                 }
@@ -459,7 +459,7 @@ struct SettingsView: View {
                 SettingRow(title: "ND_USERNAME") {
                     HStack(spacing: 6) {
                         TextField("admin", text: $settings.ndUsername)
-                            .textFieldStyle(.roundedBorder)
+                            .appTextField()
                         FieldHelpIcon(help: loc.t("Nexus Dashboard 的本地账号（API Key 只对 local 账号有效）"))
                     }
                 }
@@ -467,7 +467,7 @@ struct SettingsView: View {
                 SettingRow(title: "ND_API_KEY") {
                     HStack(spacing: 6) {
                         SecureField(loc.t("留空则改用下面的用户名密码登录"), text: $settings.ndAPIKey)
-                            .textFieldStyle(.roundedBorder)
+                            .appTextField()
                         FieldHelpIcon(help: loc.t("右上角用户名 → Manage API keys → Add API key。留空则后端用 ND_PASSWORD 调 /api/v1/infra/login 换 token"))
                     }
                 }
@@ -475,7 +475,7 @@ struct SettingsView: View {
                 SettingRow(title: "ND_PASSWORD") {
                     HStack(spacing: 6) {
                         SecureField(loc.t("仅在不用 API Key 时填写"), text: $settings.ndPassword)
-                            .textFieldStyle(.roundedBorder)
+                            .appTextField()
                         FieldHelpIcon(help: loc.t("密码模式：后端 POST /api/v1/infra/login 拿 jwttoken，进程内缓存 10 分钟后自动续期"))
                     }
                 }
@@ -483,7 +483,7 @@ struct SettingsView: View {
                 SettingRow(title: "ND_LOGIN_DOMAIN") {
                     HStack(spacing: 6) {
                         TextField("local", text: $settings.ndLoginDomain)
-                            .textFieldStyle(.roundedBorder)
+                            .appTextField()
                         FieldHelpIcon(help: loc.t("密码模式的登录域，本地账号填 local；对接外部认证域时填对应域名"))
                     }
                 }
@@ -623,7 +623,7 @@ struct SettingsView: View {
                         Text(name)
                             .frame(width: CGFloat(120).appScaled(by: fontScale), alignment: .leading)
                         SecureField(loc.t("容器的 X-API-Key"), text: keyDraftBinding(name))
-                            .textFieldStyle(.roundedBorder)
+                            .appTextField()
                         Button(loc.t("保存密钥")) {
                             do {
                                 try settings.saveContainerAPIKey(settings.containerKeyDrafts[name] ?? "", for: name)
@@ -681,7 +681,7 @@ struct SettingsView: View {
                 SettingRow(title: "DEEPSEEK_API_KEY") {
                     HStack(spacing: 6) {
                         SecureField(loc.t("sk-…（留空则 DeepSeek 走 mock 回复）"), text: $settings.deepseekKey)
-                            .textFieldStyle(.roundedBorder)
+                            .appTextField()
                         FieldHelpIcon(help: "platform.deepseek.com → API Keys")
                     }
                 }
@@ -689,7 +689,7 @@ struct SettingsView: View {
                 SettingRow(title: "KIMI_API_KEY") {
                     HStack(spacing: 6) {
                         SecureField(loc.t("sk-…（留空则 Kimi 走 mock 回复）"), text: $settings.kimiKey)
-                            .textFieldStyle(.roundedBorder)
+                            .appTextField()
                         FieldHelpIcon(help: loc.t("Moonshot / Kimi 开放平台 → API Keys"))
                     }
                 }
@@ -697,7 +697,7 @@ struct SettingsView: View {
                 SettingRow(title: "OPENAI_API_KEY") {
                     HStack(spacing: 6) {
                         SecureField(loc.t("sk-…（留空则 OpenAI 走 mock 回复）"), text: $settings.openaiKey)
-                            .textFieldStyle(.roundedBorder)
+                            .appTextField()
                         FieldHelpIcon(help: loc.t("OpenAI: platform.openai.com → API keys；Azure Foundry 用 Azure 门户里的 Key"))
                     }
                 }
@@ -705,7 +705,7 @@ struct SettingsView: View {
                 SettingRow(title: "OPENAI_BASE_URL") {
                     HStack(spacing: 6) {
                         TextField("https://api.openai.com/v1", text: $settings.openaiBaseURL)
-                            .textFieldStyle(.roundedBorder)
+                            .appTextField()
                         FieldHelpIcon(help: loc.t("Azure Foundry 填 https://<资源名>.openai.azure.com/openai/v1"))
                     }
                 }
@@ -713,7 +713,7 @@ struct SettingsView: View {
                 SettingRow(title: "OPENAI_MODEL_NAME") {
                     HStack(spacing: 6) {
                         TextField("gpt-4o", text: $settings.openaiModel)
-                            .textFieldStyle(.roundedBorder)
+                            .appTextField()
                         FieldHelpIcon(help: loc.t("Azure 上填部署名（例如 gpt-5.6-sol）；OpenAI 上填模型名"))
                     }
                 }
@@ -772,17 +772,17 @@ struct SettingsView: View {
 
                 SettingRow(title: "Google Client ID") {
                     TextField("xxxx.apps.googleusercontent.com", text: $settings.googleClientID)
-                        .textFieldStyle(.roundedBorder)
+                        .appTextField()
                 }
 
                 SettingRow(title: loc.t("允许的邮箱")) {
                     TextField("alice@example.com,bob@example.com", text: $settings.googleAllowedEmails)
-                        .textFieldStyle(.roundedBorder)
+                        .appTextField()
                 }
 
                 SettingRow(title: loc.t("允许的域名")) {
                     TextField("example.com", text: $settings.googleAllowedDomains)
-                        .textFieldStyle(.roundedBorder)
+                        .appTextField()
                 }
 
                 Text(loc.t("Client ID 来自 Google Cloud 的桌面应用 OAuth Client。邮箱和域名用逗号分隔；两者都留空会允许所有 Google 账号。"))
@@ -801,17 +801,17 @@ struct SettingsView: View {
 
                 SettingRow(title: "GitHub Client ID") {
                     TextField("OAuth App Client ID", text: $settings.githubClientID)
-                        .textFieldStyle(.roundedBorder)
+                        .appTextField()
                 }
 
                 SettingRow(title: loc.t("允许的用户名")) {
                     TextField("octocat,another-user", text: $settings.githubAllowedLogins)
-                        .textFieldStyle(.roundedBorder)
+                        .appTextField()
                 }
 
                 SettingRow(title: loc.t("允许的邮箱")) {
                     TextField("alice@example.com", text: $settings.githubAllowedEmails)
-                        .textFieldStyle(.roundedBorder)
+                        .appTextField()
                 }
 
                 Text(loc.t("需要在 GitHub OAuth App 设置中启用 Device Flow。用户名和邮箱用逗号分隔；两者都留空会允许所有 GitHub 账号。"))
@@ -830,22 +830,22 @@ struct SettingsView: View {
 
                 SettingRow(title: loc.t("默认登录用户名")) {
                     TextField("admin", text: $settings.username)
-                        .textFieldStyle(.roundedBorder)
+                        .appTextField()
                 }
 
                 SettingRow(title: "后端管理员用户名（ADMIN_USERNAME）") {
                     TextField("admin", text: $settings.backendAdminUsername)
-                        .textFieldStyle(.roundedBorder)
+                        .appTextField()
                 }
 
                 SettingRow(title: loc.t("密码")) {
                     SecureField(loc.t("登录密码"), text: $settings.loginPassword)
-                        .textFieldStyle(.roundedBorder)
+                        .appTextField()
                 }
 
                 SettingRow(title: "后端管理员密码（ADMIN_PASSWORD）") {
                     SecureField(loc.t("仅保存在 macOS Keychain"), text: $settings.backendAdminPassword)
-                        .textFieldStyle(.roundedBorder)
+                        .appTextField()
                 }
 
                 Text(loc.t("登录密码用于记住本机登录；后端管理员密码单独保存在 Keychain，并在启动后端时注入。"))

@@ -44,6 +44,12 @@ First production release:
 
 These checks cover building, publishing, signatures, and first launch. A user-level acceptance test that replaces an older 0.3 installation with a later 0.3 build has not yet been completed.
 
+### Large-font input field fix (2026-10-02)
+
+To address text overflowing Settings fields at 200% font scale, Settings, container keys, and login now share input controls sized from the font's actual line height. Text, placeholders, and password bullets scale together with the field height. Settings labels have a wider column; when space is limited, the label moves above the editor so long labels such as `OPENAI_MODEL_NAME` do not crowd the input area.
+
+Local validation includes a complete Xcode build and 32 native editor layout checks at 80%, 115%, 200%, and 250% font scale, with 560/940-point widths and font changes while running. The saved font preference is preserved. Use “Check for Updates…” to install a subsequent release containing this fix.
+
 ## 2. Deployment model and requirements
 
 GitHub deploys downloadable macOS packages. The client and Python backend continue to run on each user's Mac; enabling updates does not move the backend to GitHub servers.
