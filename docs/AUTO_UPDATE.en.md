@@ -46,6 +46,8 @@ These checks cover building, publishing, signatures, and first launch. A user-le
 
 ### Large-font input field fix (2026-10-02)
 
+Released in [0.3.6 (build 10.6.1)](https://github.com/gtsdrt/gtsdrt_ai_hub_macos/releases/tag/v0.3.6-build.1). [PR #2](https://github.com/gtsdrt/gtsdrt_ai_hub_macos/pull/2) and the [production release build](https://github.com/gtsdrt/gtsdrt_ai_hub_macos/actions/runs/36990546481) passed their checks. The actual published ZIP/feed were downloaded again to verify versions, size, the Ed25519 signature, and the app's code signature.
+
 To address text overflowing Settings fields at 200% font scale, Settings, container keys, and login now share input controls sized from the font's actual line height. Text, placeholders, and password bullets scale together with the field height. Settings labels have a wider column; when space is limited, the label moves above the editor so long labels such as `OPENAI_MODEL_NAME` do not crowd the input area.
 
 Local validation includes a complete Xcode build and 32 native editor layout checks at 80%, 115%, 200%, and 250% font scale, with 560/940-point widths and font changes while running. The saved font preference is preserved. Use “Check for Updates…” to install a subsequent release containing this fix.
