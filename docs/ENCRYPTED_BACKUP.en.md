@@ -4,6 +4,8 @@
 
 Implemented on 2026-10-03. Open Settings → Backup and Restore. This version provides manual encrypted backups, password verification and preview, selective restore, and rollback on restore failures.
 
+Released in [AIChatApp 0.3.8](https://github.com/gtsdrt/gtsdrt_ai_hub_macos/releases/tag/v0.3.8-build.1), build `10.8.1`. Existing installations can upgrade through “Check for Updates…” in the app menu.
+
 ## Creating a backup
 
 1. Save your settings first, then choose “Create Encrypted Backup…”. Backups read saved preferences and Keychain entries; unsaved field drafts are excluded.
@@ -76,5 +78,12 @@ xcrun swiftc -parse-as-library \
 ```
 
 Tests use temporary databases, an isolated UserDefaults suite, and a fake credential store. They do not read/write real chats or Keychain entries. GitHub Actions runs the same tests before every release. An independent Python PBKDF2/AES-GCM implementation also verified decryption of the Swift-generated test file.
+
+### Release 0.3.8 validation record
+
+- All 40 isolated checks passed locally and in GitHub Actions, covering WAL snapshots, wrong passwords, tampering, size/type limits, selective restore and rollback after partial write failures.
+- The full local Xcode build and [production release build](https://github.com/gtsdrt/gtsdrt_ai_hub_macos/actions/runs/37128615323) passed.
+- The actual SwiftUI backup views were rendered with fake services at 115%/200% font scale to check create/restore text and field layout. No restore was performed against real user data.
+- After downloading the published ZIP, version/build, update URL, archive length, Ed25519 update signature and deep app code signature were verified. `latest` points to `v0.3.8-build.1`. This does not confirm Apple notarization; signing retains the ad-hoc setup described in the deployment guide.
 
 References: [SQLite Online Backup](https://www.sqlite.org/backup.html), [Apple AES.GCM](https://developer.apple.com/documentation/cryptokit/aes/gcm), [OWASP PBKDF2 parameters](https://cheatsheetseries.owasp.org/cheatsheets/Password_Storage_Cheat_Sheet.html#pbkdf2).

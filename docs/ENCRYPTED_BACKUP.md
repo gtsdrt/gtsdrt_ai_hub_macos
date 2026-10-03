@@ -4,6 +4,8 @@
 
 实现日期：2026-10-03。入口为「设置 → 备份与恢复」。本版本提供手动加密备份、密码验证与预览、按范围恢复，以及恢复失败时的回滚。
 
+已发布版本：[AIChatApp 0.3.8](https://github.com/gtsdrt/gtsdrt_ai_hub_macos/releases/tag/v0.3.8-build.1)，构建号 `10.8.1`。现有安装可从 App 菜单的「检查更新…」升级。
+
 ## 创建备份
 
 1. 先在设置页保存配置，再选择「创建加密备份…」。备份读取已保存的设置和钥匙串条目，不保存尚未提交的输入草稿。
@@ -76,5 +78,12 @@ xcrun swiftc -parse-as-library \
 ```
 
 测试只使用临时数据库、独立 UserDefaults suite 和虚构凭据存储，不读写真实用户聊天或钥匙串。GitHub Actions 在每次发布前运行同一套测试。另以独立 Python PBKDF2/AES-GCM 实现验证 Swift 生成的测试文件可正确解密。
+
+### 0.3.8 发布验证记录
+
+- 本地及 GitHub Actions 的 40 项隔离测试通过；涵盖 WAL 快照、错误密码、篡改、大小/类型限制、选择性恢复及部分写入失败后的回滚。
+- 本地完整 Xcode 构建和 [正式发布构建](https://github.com/gtsdrt/gtsdrt_ai_hub_macos/actions/runs/37128615323) 均通过。
+- 用真实 SwiftUI 备份视图与虚构服务渲染 115%/200% 字号的创建/恢复窗口，检查文字与输入框布局。没有在用户真实数据上执行恢复。
+- 下载正式 ZIP 后，核验版本/构建号、更新下载 URL、文件长度、Ed25519 更新签名及 App 深度代码签名；`latest` 指向 `v0.3.8-build.1`。此验证不代表 Apple notarization，签名方式沿用部署文档中的 ad-hoc 设置。
 
 参考：[SQLite Online Backup](https://www.sqlite.org/backup.html)、[Apple AES.GCM](https://developer.apple.com/documentation/cryptokit/aes/gcm)、[OWASP PBKDF2 参数](https://cheatsheetseries.owasp.org/cheatsheets/Password_Storage_Cheat_Sheet.html#pbkdf2)。
