@@ -311,6 +311,29 @@ final class BackendController: ObservableObject {
         append("[app] 已停止后端进程")
     }
 
+    /// Restore cannot replace a live WAL database. Unlike stop(), wait until the
+    /// owned process has actually exited; never terminate an external backend.
+    func stopForDataRestore() async throws {
+        guard !isExternallyStarted else { throw BackupError.externalBackend }
+        guard !isStarting, status != .starting else { throw BackupError.stopping }
+        let ownedProcess = process
+        stop()
+        if let ownedProcess {
+            let deadline = Date().addingTimeInterval(8)
+            while ownedProcess.isRunning && Date() < deadline {
+                try await Task.sleep(nanoseconds: 50_000_000)
+            }
+            guard !ownedProcess.isRunning else {
+                // Keep ownership/PID if shutdown timed out; a retry must not
+                // mistake this still-running writer for an unrelated process.
+                process = ownedProcess
+                status = .running(external: false)
+                writePidFile(ownedProcess.processIdentifier)
+                throw BackupError.stopping
+            }
+        }
+    }
+
     /// App 退出时调用：SIGTERM 之后最多等 5 秒，还活着就 SIGKILL
     func terminateOnAppExit() {
         defer {

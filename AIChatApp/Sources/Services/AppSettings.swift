@@ -221,6 +221,46 @@ final class AppSettings: ObservableObject {
         }
     }
 
+    /// Keep the observed object identity while refreshing restored preferences and credentials.
+    func reloadAfterBackupRestore() {
+        let restored = AppSettings()
+        backendBaseURL = restored.backendBaseURL
+        projectDirectory = restored.projectDirectory
+        pythonPath = restored.pythonPath
+        autoStartBackend = restored.autoStartBackend
+        defaultProvider = restored.defaultProvider
+        username = restored.username
+        backendAdminUsername = restored.backendAdminUsername
+        googleClientID = restored.googleClientID
+        googleAllowedEmails = restored.googleAllowedEmails
+        googleAllowedDomains = restored.googleAllowedDomains
+        githubClientID = restored.githubClientID
+        githubAllowedLogins = restored.githubAllowedLogins
+        githubAllowedEmails = restored.githubAllowedEmails
+        fontScale = restored.fontScale
+        language = restored.language
+        deepseekKey = restored.deepseekKey
+        kimiKey = restored.kimiKey
+        openaiKey = restored.openaiKey
+        openaiBaseURL = restored.openaiBaseURL
+        openaiModel = restored.openaiModel
+        openaiAuthMode = restored.openaiAuthMode
+        loginPassword = restored.loginPassword
+        backendAdminPassword = restored.backendAdminPassword
+        azureTenantID = restored.azureTenantID
+        azureClientID = restored.azureClientID
+        azureClientSecret = restored.azureClientSecret
+        azureSubscriptionID = restored.azureSubscriptionID
+        merakiAPIKey = restored.merakiAPIKey
+        ndBaseURL = restored.ndBaseURL
+        ndUsername = restored.ndUsername
+        ndAPIKey = restored.ndAPIKey
+        ndPassword = restored.ndPassword
+        ndLoginDomain = restored.ndLoginDomain
+        ndVerifyTLS = restored.ndVerifyTLS
+        containerRegistryJSON = restored.containerRegistryJSON
+    }
+
     // MARK: - 保存
 
     func persist() throws {

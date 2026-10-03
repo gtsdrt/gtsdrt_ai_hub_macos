@@ -9,6 +9,9 @@ final class SessionStore: ObservableObject {
     @Published var loginError: String?
     @Published var isLoggingIn = false
     @Published var notice: String?
+    @Published var isRestoringBackup = false
+    @Published private(set) var dataRevision = 0
+    @Published var backupRecoveryURL: URL?
 
     let settings: AppSettings
     let backend: BackendController
@@ -66,7 +69,7 @@ final class SessionStore: ObservableObject {
             while !Task.isCancelled {
                 try? await Task.sleep(nanoseconds: 10_000_000_000)
                 guard let self else { return }
-                guard !self.backend.status.isRunning else { continue }
+                guard !self.isRestoringBackup, !self.backend.status.isRunning else { continue }
                 await self.backend.refreshExternalStatus(settings: self.settings)
             }
         }
@@ -75,6 +78,13 @@ final class SessionStore: ObservableObject {
     func syncAPIClient() {
         api.baseURLString = settings.backendBaseURL
         api.token = token
+    }
+
+    func didRestoreBackup() {
+        settings.reloadAfterBackupRestore()
+        logout(message: L("备份已恢复，请重新登录。"))
+        syncAPIClient()
+        dataRevision += 1
     }
 
     // MARK: - 登录 / 登出

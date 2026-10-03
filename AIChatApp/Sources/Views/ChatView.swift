@@ -32,6 +32,9 @@ struct ChatView: View {
                 await model.refreshHealth()
             }
         }
+        .onChange(of: session.isRestoringBackup) { restoring in
+            if restoring { model.cancelSending() }
+        }
     }
 
     // MARK: - 左侧会话列表
