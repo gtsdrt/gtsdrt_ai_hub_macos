@@ -22,6 +22,8 @@ struct RootView: View {
                 LoginView(session: session)
             }
         }
+        .id(session.dataRevision)
+        .disabled(session.isRestoringBackup)
         .appFontScale(CGFloat(settings.fontScale))
         .appLanguage(settings.language)
         .frame(

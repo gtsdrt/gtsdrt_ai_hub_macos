@@ -81,6 +81,12 @@ jobs:
             --pattern "Sparkle-$SPARKLE_VERSION.tar.xz" --dir "$RUNNER_TEMP/sparkle"
           tar -xf "$RUNNER_TEMP/sparkle/Sparkle-$SPARKLE_VERSION.tar.xz" -C "$RUNNER_TEMP/sparkle"
           echo "SPARKLE_TOOLS_DIR=$RUNNER_TEMP/sparkle/bin" >> "$GITHUB_ENV"
+      - name: Verify encrypted backup, WAL snapshots and restore rollback
+        run: |
+          xcrun swiftc -parse-as-library AIChatApp/Sources/Services/BackupArchive.swift \
+            AIChatApp/Sources/Services/BackupRepository.swift scripts/test_encrypted_backup.swift \
+            -o "$RUNNER_TEMP/aichat-backup-tests"
+          "$RUNNER_TEMP/aichat-backup-tests"
       - name: Build and verify app, backend and signed update feed
         run: bash scripts/build_release.sh
       - uses: actions/upload-artifact@v4

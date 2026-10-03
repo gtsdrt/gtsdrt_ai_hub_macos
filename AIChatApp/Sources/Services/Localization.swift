@@ -24,9 +24,9 @@ struct Localizer: Equatable {
     func t(_ chinese: String) -> String {
         switch language {
         case .english:
-            return LocalizationTableEN.table[chinese] ?? chinese
+            return LocalizationTableEN.table[chinese] ?? BackupLocalization.english[chinese] ?? chinese
         case .norwegian:
-            return LocalizationTableNB.table[chinese] ?? chinese
+            return LocalizationTableNB.table[chinese] ?? BackupLocalization.norwegian[chinese] ?? chinese
         case .system, .simplifiedChinese:
             return chinese
         }

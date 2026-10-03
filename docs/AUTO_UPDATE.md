@@ -2,6 +2,8 @@
 
 [English](AUTO_UPDATE.en.md) · [架构说明](ARCHITECTURE.md) · [项目首页](../README.md)
 
+新增功能说明：[加密备份与恢复](ENCRYPTED_BACKUP.md)。
+
 记录日期：2026-10-01。本文对应已发布的 **0.3.4**，并说明当前仓库实际实现的自动发布和更新流程。
 
 ## 目录

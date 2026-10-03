@@ -2,7 +2,7 @@ import Foundation
 import Security
 
 /// 极简 Keychain 封装：token 与 API Key 都存成 generic password，不落 UserDefaults
-final class KeychainStore {
+final class KeychainStore: BackupCredentialStore {
     static let shared = KeychainStore()
 
     enum Keys {
@@ -51,6 +51,40 @@ final class KeychainStore {
     private let service = "com.example.AIChatApp"
 
     private init() {}
+
+    /// Only this app's service and known account namespace; never the entire Keychain.
+    /// Permission errors abort export instead of silently producing an incomplete backup.
+    func exportBackupCredentials() throws -> [String: String] {
+        let query: [String: Any] = [kSecClass as String: kSecClassGenericPassword,
+            kSecAttrService as String: service, kSecMatchLimit as String: kSecMatchLimitAll,
+            kSecReturnAttributes as String: true, kSecReturnData as String: true]
+        var result: CFTypeRef?
+        let status = SecItemCopyMatching(query as CFDictionary, &result)
+        if status == errSecItemNotFound { return [:] }
+        guard status == errSecSuccess, let items = result as? [[String: Any]] else { throw BackupError.credentials }
+        var values: [String: String] = [:]
+        for item in items {
+            guard let account = item[kSecAttrAccount as String] as? String,
+                  BackupPolicy.allowedCredential(account) else { continue }
+            guard let data = item[kSecValueData as String] as? Data,
+                  let value = String(data: data, encoding: .utf8) else { throw BackupError.credentials }
+            values[account] = value
+        }
+        return values
+    }
+
+    func applyBackupCredentials(_ entries: [String: String], removing: Set<String>) throws {
+        guard entries.keys.allSatisfy(BackupPolicy.allowedCredential),
+              removing.allSatisfy(BackupPolicy.allowedCredential) else { throw BackupError.credentials }
+        let cleared = removing.union(entries.filter { $0.value.isEmpty }.keys)
+        for account in cleared {
+            let query: [String: Any] = [kSecClass as String: kSecClassGenericPassword,
+                kSecAttrService as String: service, kSecAttrAccount as String: account]
+            let status = SecItemDelete(query as CFDictionary)
+            guard status == errSecSuccess || status == errSecItemNotFound else { throw BackupError.credentials }
+        }
+        for (account, value) in entries where !value.isEmpty { try save(value, for: account) }
+    }
 
     func save(_ value: String, for key: String) throws {
         let baseQuery: [String: Any] = [

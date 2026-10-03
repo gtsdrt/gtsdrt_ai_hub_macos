@@ -2,6 +2,8 @@
 
 [中文版](AUTO_UPDATE.md) · [Architecture](ARCHITECTURE.en.md) · [Project README](../README.md)
 
+New feature guide: [Encrypted backup and restore](ENCRYPTED_BACKUP.en.md).
+
 Recorded on 2026-10-01. This guide documents the released **0.3.4** build and the automatic release and update workflow implemented in this repository.
 
 ## Contents

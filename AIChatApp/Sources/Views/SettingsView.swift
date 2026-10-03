@@ -52,6 +52,7 @@ struct SettingsView: View {
 
                     languageSection.id(SettingsSection.language)
                     updateSection.id(SettingsSection.updates)
+                    BackupSettingsSection(session: session).id(SettingsSection.backup)
                     backendSection.id(SettingsSection.backend)
                     azureSection.id(SettingsSection.azure)
                     merakiSection.id(SettingsSection.meraki)
