@@ -124,8 +124,10 @@ open .xcbuild/Build/Products/Debug/AIChatApp.app
 ```
 
 首次启动会：自动探测项目目录与 `.venv/bin/python` → 拉起 `main.py` → 用 `/api/health` 做健康检查。
-登录口令就是你在 App「设置 → 本机管理员」里设置的那个（与后端 `.env` 的 `ADMIN_PASSWORD` 一致）；
-没有默认口令，未设置时后端会拒绝启动。
+登录口令就是你在这个设置项里填写的口令；App 会把它以 `ADMIN_PASSWORD` 注入后端进程，
+**优先级高于 `.env`**（Keychain 是口令的唯一持久化来源，`.env` 里不必写）。
+没有默认口令：未设置、为空、仍是历史默认值或短于 8 位时后端会拒绝启动。
+若从源码直接 `python main.py`（没有 App 注入），则需自行提供 `ADMIN_PASSWORD`。
 
 ### 4. 跑测试
 
