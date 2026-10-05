@@ -5,6 +5,8 @@ struct ChatView: View {
     /// 观察设置页里的 provider：在设置页切了 provider，这里的简称也要跟着刷新
     @ObservedObject private var settings: AppSettings
     @StateObject private var model: ChatViewModel
+    /// 批量删除前的二次确认
+    @State private var showingBulkDeleteConfirm = false
     @Environment(\.appFontScale) private var fontScale
     @Environment(\.loc) private var loc
 
@@ -35,54 +37,58 @@ struct ChatView: View {
         .onChange(of: session.isRestoringBackup) { restoring in
             if restoring { model.cancelSending() }
         }
+        // 批量删除的二次确认：挂在根视图上，保证在当前窗口弹出
+        .confirmationDialog(
+            loc.t("删除选中的 {0} 个会话？", String(model.selectedConversationIDs.count)),
+            isPresented: $showingBulkDeleteConfirm,
+            titleVisibility: .visible
+        ) {
+            Button(loc.t("删除"), role: .destructive) {
+                Task { await model.deleteSelected() }
+            }
+            Button(loc.t("取消"), role: .cancel) {}
+        } message: {
+            Text(loc.t("删除后无法恢复。"))
+        }
     }
 
     // MARK: - 左侧会话列表
 
     private var sidebar: some View {
         VStack(spacing: 0) {
-            HStack {
-                Text(loc.t("会话"))
-                    .appFont(.headline)
-                Spacer()
-                Button {
-                    model.newConversation()
-                } label: {
-                    Image(systemName: "square.and.pencil")
+            sidebarHeader
+
+            if let progress = model.selectionProgress {
+                HStack(spacing: 6) {
+                    ProgressView().controlSize(.small)
+                    Text(progress)
+                        .appFont(.caption)
+                        .foregroundStyle(.secondary)
+                    Spacer(minLength: 0)
                 }
-                .buttonStyle(.borderless)
-                .help(loc.t("新建对话"))
+                .padding(.horizontal, 12)
+                .padding(.bottom, 6)
             }
-            .padding(.horizontal, 12)
-            .padding(.vertical, 10)
 
             List {
                 ForEach(model.conversations) { conversation in
                     Button {
-                        Task { await model.open(conversation) }
-                    } label: {
-                        VStack(alignment: .leading, spacing: 3) {
-                            Text(conversation.title)
-                                .lineLimit(1)
-                            Text(loc.t("{0} 条消息", String(conversation.messageCount ?? 0)))
-                                .appFont(.caption)
-                                .foregroundStyle(.secondary)
+                        if model.isSelecting {
+                            model.toggleSelection(conversation)
+                        } else {
+                            Task { await model.open(conversation) }
                         }
-                        .frame(maxWidth: .infinity, alignment: .leading)
-                        .padding(.vertical, 4)
-                        .padding(.horizontal, 6)
-                        .background(
-                            RoundedRectangle(cornerRadius: 6)
-                                .fill(
-                                    model.conversationID == conversation.conversationID
-                                        ? Color.accentColor.opacity(0.16)
-                                        : Color.clear
-                                )
-                        )
-                        .contentShape(Rectangle())
+                    } label: {
+                        conversationRow(conversation)
                     }
                     .buttonStyle(.plain)
                     .contextMenu {
+                        if !model.isSelecting {
+                            Button(loc.t("多选删除")) {
+                                model.beginSelection()
+                                model.toggleSelection(conversation)
+                            }
+                        }
                         Button(loc.t("删除这个会话"), role: .destructive) {
                             Task { await model.delete(conversation) }
                         }
@@ -90,12 +96,102 @@ struct ChatView: View {
                 }
             }
             .listStyle(.sidebar)
+            // 删除进行中先别让用户继续点，避免边删边改勾选
+            .allowsHitTesting(!model.isDeletingSelection)
         }
         .navigationSplitViewColumnWidth(
             min: CGFloat(200).appScaled(by: fontScale),
             ideal: CGFloat(240).appScaled(by: fontScale),
             max: CGFloat(320).appScaled(by: fontScale)
         )
+    }
+
+    /// 侧边栏顶部：普通模式下是「新建 + 进入多选」，多选模式下是「全选 + 删除」
+    private var sidebarHeader: some View {
+        HStack(spacing: 10) {
+            if model.isSelecting {
+                Button(loc.t("完成")) {
+                    model.endSelection()
+                }
+                .buttonStyle(.borderless)
+
+                Spacer(minLength: 0)
+
+                Button(model.allSelected ? loc.t("取消全选") : loc.t("全选")) {
+                    model.toggleSelectAll()
+                }
+                .buttonStyle(.borderless)
+                .disabled(model.conversations.isEmpty)
+
+                Button(role: .destructive) {
+                    showingBulkDeleteConfirm = true
+                } label: {
+                    Text(loc.t("删除 {0} 个", String(model.selectedConversationIDs.count)))
+                }
+                .buttonStyle(.borderless)
+                .disabled(model.selectedConversationIDs.isEmpty || model.isDeletingSelection)
+            } else {
+                Text(loc.t("会话"))
+                    .appFont(.headline)
+
+                Spacer(minLength: 0)
+
+                Button {
+                    model.newConversation()
+                } label: {
+                    Image(systemName: "square.and.pencil")
+                }
+                .buttonStyle(.borderless)
+                .help(loc.t("新建对话"))
+
+                Button {
+                    model.beginSelection()
+                } label: {
+                    Image(systemName: "checkmark.circle")
+                }
+                .buttonStyle(.borderless)
+                .help(loc.t("多选删除"))
+                .disabled(model.conversations.isEmpty)
+            }
+        }
+        .padding(.horizontal, 12)
+        .padding(.vertical, 10)
+    }
+
+    private func conversationRow(_ conversation: ConversationSummary) -> some View {
+        HStack(spacing: 8) {
+            if model.isSelecting {
+                Image(systemName: isSelectedForDeletion(conversation) ? "checkmark.circle.fill" : "circle")
+                    .foregroundStyle(isSelectedForDeletion(conversation) ? Color.accentColor : Color.secondary)
+            }
+
+            VStack(alignment: .leading, spacing: 3) {
+                Text(conversation.title)
+                    .lineLimit(1)
+                Text(loc.t("{0} 条消息", String(conversation.messageCount ?? 0)))
+                    .appFont(.caption)
+                    .foregroundStyle(.secondary)
+            }
+            .frame(maxWidth: .infinity, alignment: .leading)
+        }
+        .padding(.vertical, 4)
+        .padding(.horizontal, 6)
+        .background(
+            RoundedRectangle(cornerRadius: 6)
+                .fill(isHighlighted(conversation) ? Color.accentColor.opacity(0.16) : Color.clear)
+        )
+        .contentShape(Rectangle())
+    }
+
+    /// 多选模式下高亮勾选的行，普通模式下高亮当前打开的会话
+    private func isHighlighted(_ conversation: ConversationSummary) -> Bool {
+        model.isSelecting
+            ? isSelectedForDeletion(conversation)
+            : model.conversationID == conversation.conversationID
+    }
+
+    private func isSelectedForDeletion(_ conversation: ConversationSummary) -> Bool {
+        model.selectedConversationIDs.contains(conversation.conversationID)
     }
 
     // MARK: - 右侧对话区

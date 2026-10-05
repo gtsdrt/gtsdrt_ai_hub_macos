@@ -43,6 +43,13 @@ final class ChatViewModel: ObservableObject {
     @Published var backendSummary: String = ""
     @Published var selectedConversationID: String?
 
+    /// 会话列表的多选删除模式：开启后点击行是勾选而不是打开
+    @Published var isSelecting = false
+    @Published private(set) var selectedConversationIDs: Set<String> = []
+    @Published private(set) var isDeletingSelection = false
+    /// 批量删除进度（为空时不显示）
+    @Published private(set) var selectionProgress: String?
+
     /// 工具调用开关：开启后请求带 enable_tools，立即影响下一次发送
     @Published var enableTools: Bool {
         didSet {
@@ -189,6 +196,89 @@ final class ChatViewModel: ObservableObject {
             await refreshConversations()
         } catch {
             handle(error)
+        }
+    }
+
+    // MARK: - 多选删除
+
+    /// 进入多选模式：只改变点击行的语义，当前打开的会话保持不变
+    func beginSelection() {
+        isSelecting = true
+        selectedConversationIDs = []
+        selectionProgress = nil
+    }
+
+    func endSelection() {
+        isSelecting = false
+        selectedConversationIDs = []
+        selectionProgress = nil
+    }
+
+    func toggleSelection(_ conversation: ConversationSummary) {
+        let id = conversation.conversationID
+        if selectedConversationIDs.contains(id) {
+            selectedConversationIDs.remove(id)
+        } else {
+            selectedConversationIDs.insert(id)
+        }
+    }
+
+    /// 列表非空且已全部勾选
+    var allSelected: Bool {
+        !conversations.isEmpty
+            && conversations.allSatisfy { selectedConversationIDs.contains($0.conversationID) }
+    }
+
+    func toggleSelectAll() {
+        selectedConversationIDs = allSelected
+            ? []
+            : Set(conversations.map(\.conversationID))
+    }
+
+    /// 逐条调用已有的单会话删除接口，某一条失败不影响其它条目。
+    /// 全部成功就退出多选模式；有失败则保留这些会话的勾选，方便直接重试。
+    func deleteSelected() async {
+        let targets = selectedConversationIDs
+        guard !targets.isEmpty, !isDeletingSelection else { return }
+
+        isDeletingSelection = true
+        defer {
+            isDeletingSelection = false
+            selectionProgress = nil
+        }
+
+        var failed: Set<String> = []
+        for (index, id) in targets.enumerated() {
+            selectionProgress = L(
+                "正在删除 {0}/{1}…",
+                String(index + 1),
+                String(targets.count)
+            )
+
+            do {
+                try await session.api.deleteConversation(conversationID: id)
+                // 删掉的正好是当前打开的会话时，切回空白新对话
+                if conversationID == id {
+                    newConversation()
+                }
+            } catch {
+                if let apiError = error as? APIError, case .unauthorized = apiError {
+                    handle(error)
+                    await refreshConversations()
+                    selectedConversationIDs = []
+                    return
+                }
+                failed.insert(id)
+            }
+        }
+
+        await refreshConversations()
+
+        if failed.isEmpty {
+            endSelection()
+        } else {
+            selectedConversationIDs = failed
+            errorMessage = L("{0} 个会话删除失败，请重试", String(failed.count))
         }
     }
 

@@ -314,6 +314,8 @@ sequenceDiagram
 - 标题由 `_derive_title()` 从首条用户消息自动生成。
 - 侧边栏走 `GET /api/chat_conversations`（不含正文，按更新时间倒序），点开走
   `GET /api/chat_history`，删除走 `DELETE /api/chat_conversation`。
+- 侧边栏的多选删除是**客户端行为**：进入多选模式后逐条调用同一个 DELETE 接口，
+  某条失败不影响其它条目（失败项保留勾选便于重试），因此后端不需要新增批量接口。
 - 异步任务存 `tasks` 表；每次查询都会用 `TASK_TTL_HOURS`（默认 24h）清理过期记录。
 - 存储层「一次操作一个连接」+ WAL 模式，多线程/多 worker 安全；要换 Postgres 时，
   替换点集中在 `main.py` 的「存储层」一节。
