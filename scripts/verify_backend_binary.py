@@ -45,6 +45,12 @@ def clean_environment(port: int) -> dict[str, str]:
         "PORT": str(port),
         "HOST": "127.0.0.1",
         "LOG_LEVEL": "warning",
+        # 后端对「未设置管理员口令」是 fail closed（拒绝启动），因此冒烟测试必须
+        # 提供一个仅用于本次校验的强口令，否则测的是启动失败而不是服务能否响应。
+        "ADMIN_PASSWORD": "verify-backend-smoke-password",
+        # 固定 JWT 密钥：否则后端会在 ~/Library/Application Support/AIChatApp/
+        # 生成随机密钥并落盘，本地跑这个脚本时会污染真实目录。
+        "JWT_SECRET": "verify-backend-smoke-jwt-secret-at-least-32-bytes",
     }
 
 
