@@ -44,15 +44,18 @@ import datetime
 import html
 import hashlib
 import hmac
+import ipaddress
 import json
 import logging
 import os
 import platform
 import secrets
+import socket
 import sqlite3
 import sys
 import threading
 import time
+import urllib.error
 import urllib.parse
 import urllib.request
 import uuid
@@ -310,11 +313,121 @@ AI_MOCK_MODE = os.environ.get("AI_MOCK_MODE", "auto").strip().lower()
 AI_MOCK_DELAY_SECONDS = _env_float("AI_MOCK_DELAY_SECONDS", 0.5)
 AI_REQUEST_TIMEOUT_SECONDS = _env_float("AI_REQUEST_TIMEOUT_SECONDS", 360.0)
 
-JWT_SECRET = os.environ.get("JWT_SECRET", "your-very-secret-key-change-it-in-production")
+# 持久化位置：~/Library/Application Support/AIChatApp（可用环境变量覆盖，方便测试）
+APP_SUPPORT_DIR = os.path.expanduser(
+    _env("AICHAT_SECRETS_DIR") or "~/Library/Application Support/AIChatApp"
+)
+
+# 这些值历史上写进过公开仓库，一旦出现就等同于「没有配置」
+INSECURE_JWT_SECRETS = frozenset({
+    "",
+    "your-very-secret-key-change-it-in-production",
+    "changeme",
+    "secret",
+    "test",
+})
+INSECURE_ADMIN_PASSWORDS = frozenset({
+    "",
+    "password123",
+    "password",
+    "changeme",
+    "admin",
+})
+MIN_ADMIN_PASSWORD_LENGTH = 8
+
+
+def _write_secret_file(path: str, value: str) -> None:
+    """以 0600 权限原子写入密钥文件（先写临时文件再 rename，避免读到半截内容）"""
+    os.makedirs(os.path.dirname(path), mode=0o700, exist_ok=True)
+    temp_path = f"{path}.tmp.{os.getpid()}"
+    descriptor = os.open(temp_path, os.O_WRONLY | os.O_CREAT | os.O_TRUNC, 0o600)
+    try:
+        with os.fdopen(descriptor, "w", encoding="utf-8") as handle:
+            handle.write(value)
+        os.replace(temp_path, path)
+    except BaseException:
+        try:
+            os.unlink(temp_path)
+        except OSError:
+            pass
+        raise
+
+
+def _load_or_create_jwt_secret() -> str:
+    """
+    JWT 签名密钥。
+
+    未设置、为空、或仍是仓库里公开过的默认值时，生成一个随机密钥并持久化到
+    <APP_SUPPORT_DIR>/jwt_secret（0600）。这样默认部署不再使用任何人都能推断的
+    密钥签发 token，同时重启后 token 依然有效。显式配置的值原样使用（测试可注入）。
+    """
+    configured = os.environ.get("JWT_SECRET", "").strip()
+    if configured and configured not in INSECURE_JWT_SECRETS:
+        return configured
+
+    secret_path = _env("AICHAT_JWT_SECRET_FILE") or os.path.join(APP_SUPPORT_DIR, "jwt_secret")
+    try:
+        with open(secret_path, "r", encoding="utf-8") as handle:
+            persisted = handle.read().strip()
+        if persisted and persisted not in INSECURE_JWT_SECRETS:
+            logger.warning("JWT_SECRET 未配置，使用 %s 中的持久化随机密钥", secret_path)
+            return persisted
+    except OSError:
+        pass
+
+    generated = secrets.token_urlsafe(48)
+    try:
+        _write_secret_file(secret_path, generated)
+        logger.warning(
+            "JWT_SECRET 未配置或仍为公开过的默认值，已生成随机密钥并写入 %s（0600）。"
+            "如需固定密钥，请显式设置 JWT_SECRET。",
+            secret_path,
+        )
+    except OSError as exc:
+        logger.warning("无法持久化 JWT 密钥（%s），本次运行改用临时随机密钥：%s", secret_path, exc)
+    return generated
+
+
+def _require_admin_password() -> str:
+    """
+    本机管理员口令：必须显式配置，拒绝空值与仓库里公开过的默认值。
+
+    保留默认口令等于把后端交给任何能访问该端口的人，因此这里 fail closed：
+    宁可启动失败并给出明确提示，也不要静默地以弱口令运行。
+    """
+    password = os.environ.get("ADMIN_PASSWORD", "")
+    if password.strip() in INSECURE_ADMIN_PASSWORDS or len(password) < MIN_ADMIN_PASSWORD_LENGTH:
+        raise RuntimeError(
+            "ADMIN_PASSWORD 未设置、为空、仍为历史默认值，或短于 "
+            f"{MIN_ADMIN_PASSWORD_LENGTH} 个字符，已拒绝启动。\n"
+            "请在后端 .env 里设置 ADMIN_PASSWORD，或在 App 的「设置 → 本机管理员」里填写一个强口令。\n"
+            "生成一个可用口令：  openssl rand -base64 24"
+        )
+    return password
+
+
+JWT_SECRET = _load_or_create_jwt_secret()
 JWT_ALGORITHM = "HS256"
 JWT_EXPIRATION_MINUTES = int(os.environ.get("JWT_EXPIRATION_MINUTES", 60 * 24))
-ADMIN_USERNAME = os.environ.get("ADMIN_USERNAME", "admin")
-ADMIN_PASSWORD = os.environ.get("ADMIN_PASSWORD", "password123")
+ADMIN_USERNAME = os.environ.get("ADMIN_USERNAME", "admin").strip() or "admin"
+ADMIN_PASSWORD = _require_admin_password()
+
+# Easy Auth（X-MS-CLIENT-PRINCIPAL）默认关闭：只有显式部署在可信反向代理后面时才可启用，
+# 且必须同时配置共享密钥，否则该请求头等于一个「任意值即放行」的鉴权后门。
+TRUST_EASY_AUTH = _env_bool("AICHAT_TRUST_EASY_AUTH", False)
+EASY_AUTH_SHARED_SECRET = _env("AICHAT_EASY_AUTH_SECRET")
+EASY_AUTH_SECRET_HEADER = "X-Aichat-Proxy-Secret"
+if TRUST_EASY_AUTH and not EASY_AUTH_SHARED_SECRET:
+    raise RuntimeError(
+        "AICHAT_TRUST_EASY_AUTH=1 时必须同时设置 AICHAT_EASY_AUTH_SECRET，"
+        "否则任何客户端都能靠伪造 X-MS-CLIENT-PRINCIPAL 通过鉴权。"
+    )
+
+# webhook 回调默认禁止访问内网/回环/链路本地地址，避免变成 SSRF 探测通道
+ALLOW_PRIVATE_WEBHOOKS = _env_bool("AICHAT_ALLOW_PRIVATE_WEBHOOKS", False)
+
+# /docs 与 /openapi.json 默认关闭；本机开发时可用 AICHAT_ENABLE_DOCS=1 打开
+ENABLE_API_DOCS = _env_bool("AICHAT_ENABLE_DOCS", False)
 
 # Google 登录使用 OAuth 2.0 Authorization Code + PKCE。Client Secret 对桌面应用不是必需项；
 # 如 Google Cloud 中使用的是 Web Application 类型，可通过 GOOGLE_CLIENT_SECRET 提供。
@@ -346,8 +459,7 @@ GITHUB_ALLOWED_EMAILS = {
 TASK_TTL_HOURS = _env_float("TASK_TTL_HOURS", 24.0)
 TASK_TTL_SECONDS = _env_float("TASK_TTL_SECONDS", 0.0) or TASK_TTL_HOURS * 3600
 
-# 持久化位置：~/Library/Application Support/AIChatApp/aichat.db（可用环境变量覆盖，方便测试）
-APP_SUPPORT_DIR = os.path.expanduser("~/Library/Application Support/AIChatApp")
+# 数据库位置：<APP_SUPPORT_DIR>/aichat.db（可用环境变量覆盖，方便测试）
 DB_PATH = os.environ.get("AICHAT_DB_PATH") or os.path.join(APP_SUPPORT_DIR, "aichat.db")
 
 MAX_CHAT_IMAGES = int(os.environ.get("MAX_CHAT_IMAGES", 5))
@@ -517,23 +629,55 @@ def _google_callback_page(title: str, message: str, *, success: bool) -> HTMLRes
     )
 
 
+def _easy_auth_identity_trusted(
+    principal: Optional[str],
+    proxy_secret: Optional[str],
+) -> bool:
+    """
+    判定是否信任 Easy Auth 的 X-MS-CLIENT-PRINCIPAL 请求头。
+
+    该请求头的安全性完全依赖「前面的反向代理会注入它并剥掉客户端自带的同名头」。
+    本机单机部署没有这层代理，若直接信任它，就等于给任何人一个「带个请求头即
+    管理员」的后门。因此默认关闭，且开启时还必须持有共享密钥（只有代理知道）。
+    """
+    if not TRUST_EASY_AUTH or not principal:
+        return False
+    if not EASY_AUTH_SHARED_SECRET or not proxy_secret:
+        return False
+    return hmac.compare_digest(proxy_secret, EASY_AUTH_SHARED_SECRET)
+
+
 def require_auth(
     authorization: Optional[str] = Header(default=None),
     x_ms_client_principal: Optional[str] = Header(default=None, alias="X-MS-CLIENT-PRINCIPAL"),
+    x_aichat_proxy_secret: Optional[str] = Header(default=None, alias=EASY_AUTH_SECRET_HEADER),
 ) -> None:
-    """FastAPI 依赖：Bearer JWT 或 Easy Auth 头任一通过即可"""
+    """FastAPI 依赖：要求有效的 Bearer JWT（Easy Auth 仅在显式启用时作为补充）"""
     if authorization and authorization.lower().startswith("bearer "):
         token = authorization.split(" ", 1)[1]
         try:
             _decode_token(token)
             return
         except ValueError as exc:
-            logger.warning("JWT 校验失败，回退 Easy Auth：%s", exc)
+            logger.warning("JWT 校验失败：%s", exc)
 
-    if x_ms_client_principal:
+    if _easy_auth_identity_trusted(x_ms_client_principal, x_aichat_proxy_secret):
         return
 
     raise HTTPException(status_code=401, detail="Missing or invalid authentication")
+
+
+def _request_is_authenticated(
+    authorization: Optional[str] = Header(default=None),
+) -> bool:
+    """只用于 /health 这类需要区分「已登录/未登录」但不能直接 401 的端点"""
+    if not authorization or not authorization.lower().startswith("bearer "):
+        return False
+    try:
+        _decode_token(authorization.split(" ", 1)[1])
+        return True
+    except ValueError:
+        return False
 
 
 # ============================================================
@@ -1762,14 +1906,91 @@ def run_ai_with_tools_text(
 # ============================================================
 
 
+def _webhook_url_error(url: str) -> Optional[str]:
+    """
+    校验 webhook 目标地址，返回错误说明；地址合法时返回 None。
+
+    webhook_url 完全由调用方指定，原实现直接 urlopen，等于把后端当成 SSRF 跳板
+    （探测内网端口、访问云元数据 169.254.169.254、打内部管理面）。这里要求：
+      - 只允许 http / https
+      - 解析出的所有 IP 都不能是回环 / 私有 / 链路本地 / 保留 / 组播 / 未指定地址
+    """
+    if ALLOW_PRIVATE_WEBHOOKS:
+        return None
+
+    try:
+        parsed = urllib.parse.urlparse(url)
+    except ValueError as exc:
+        return f"URL 无法解析：{exc}"
+
+    if parsed.scheme not in ("http", "https"):
+        return f"只允许 http/https，收到 {parsed.scheme or '（空）'!r}"
+
+    host = parsed.hostname
+    if not host:
+        return "缺少主机名"
+
+    try:
+        port = parsed.port or (443 if parsed.scheme == "https" else 80)
+    except ValueError as exc:
+        return f"端口不合法：{exc}"
+
+    try:
+        infos = socket.getaddrinfo(host, port, proto=socket.IPPROTO_TCP)
+    except socket.gaierror as exc:
+        return f"域名无法解析：{exc}"
+
+    for info in infos:
+        raw_ip = info[4][0]
+        try:
+            address = ipaddress.ip_address(raw_ip)
+        except ValueError:
+            return f"无法识别的解析结果：{raw_ip}"
+        if (
+            address.is_private
+            or address.is_loopback
+            or address.is_link_local
+            or address.is_reserved
+            or address.is_multicast
+            or address.is_unspecified
+        ):
+            return f"目标解析到内网/回环地址（{raw_ip}），已拒绝"
+
+    return None
+
+
+class _WebhookRedirectHandler(urllib.request.HTTPRedirectHandler):
+    """重定向目标同样要过校验，否则一次 302 就能绕过上面的检查"""
+
+    def redirect_request(self, req, fp, code, msg, headers, newurl):  # type: ignore[override]
+        error = _webhook_url_error(newurl)
+        if error:
+            raise urllib.error.HTTPError(
+                newurl, code, f"重定向被拒绝：{error}", headers, fp
+            )
+        return super().redirect_request(req, fp, code, msg, headers, newurl)
+
+
+_WEBHOOK_OPENER = urllib.request.build_opener(
+    _WebhookRedirectHandler,
+    # 不继承环境代理，避免代理把请求转进内网
+    urllib.request.ProxyHandler({}),
+)
+
+
 def send_webhook(url: str, payload: dict) -> None:
     """异步任务完成后回调调用方；失败只记日志，不影响主流程"""
+    error = _webhook_url_error(url)
+    if error:
+        logger.warning("[Webhook] 已拒绝回调 %s：%s", url, error)
+        return
+
     try:
         body = json.dumps(payload, ensure_ascii=False).encode()
         request = urllib.request.Request(
             url, data=body, headers={"Content-Type": "application/json"}, method="POST"
         )
-        with urllib.request.urlopen(request, timeout=15) as resp:
+        with _WEBHOOK_OPENER.open(request, timeout=15) as resp:
             logger.info("[Webhook] %s 返回 HTTP %s", url, resp.status)
     except Exception as exc:
         logger.warning("[Webhook] 回调失败（不影响主流程）：%s", exc)
@@ -2097,6 +2318,11 @@ app = FastAPI(
     version="1.0.0",
     description="本地 AI 对话后端：FastAPI + openai SDK，支持 Kimi / DeepSeek 与 mock 联调模式",
     lifespan=lifespan,
+    # 默认不暴露交互式文档与 OpenAPI schema（它们不需要鉴权，会白送整个接口面）。
+    # 本机开发需要时设 AICHAT_ENABLE_DOCS=1。
+    docs_url="/docs" if ENABLE_API_DOCS else None,
+    redoc_url="/redoc" if ENABLE_API_DOCS else None,
+    openapi_url="/openapi.json" if ENABLE_API_DOCS else None,
 )
 
 
@@ -2162,9 +2388,14 @@ def _chat_body_to_payload(req_body: dict) -> dict:
 
 @app.post(f"{API_PREFIX}/login", tags=["auth"])
 def login(payload: LoginRequest) -> JSONResponse:
-    """用户名密码换 JWT（默认 admin / password123，可用环境变量覆盖）"""
-    if payload.username == ADMIN_USERNAME and payload.password == ADMIN_PASSWORD:
-        return JSONResponse({"token": _encode_token(payload.username, provider="local")})
+    """用户名密码换 JWT（口令由 ADMIN_USERNAME / ADMIN_PASSWORD 显式配置，无默认值）"""
+    supplied_username = payload.username or ""
+    supplied_password = payload.password or ""
+    # 恒定时间比较，避免通过响应耗时逐字符猜接口令；两个比较都要执行，不要短路
+    username_ok = hmac.compare_digest(supplied_username, ADMIN_USERNAME)
+    password_ok = hmac.compare_digest(supplied_password, ADMIN_PASSWORD)
+    if username_ok and password_ok:
+        return JSONResponse({"token": _encode_token(supplied_username, provider="local")})
     raise HTTPException(status_code=401, detail="Invalid credentials")
 
 
@@ -2456,16 +2687,52 @@ async def github_login_status(state: str = Query(...)) -> JSONResponse:
         return JSONResponse({"status": "error", "error": message})
 
 
+# /health 必须能在登录前访问（App 的首次运行检查清单依赖它），因此未登录时只返回
+# 「配置齐不齐」这类布尔值，去掉内部路径、内部端点与账号标识。
+_SENSITIVE_HEALTH_KEYS = frozenset({
+    "db_path",            # 本机绝对路径（含用户名）
+    "subscription_id",    # Azure 订阅 GUID
+    "credential",         # 凭据来源类型
+    "probe_error",        # Azure SDK 报错原文，可能带租户/订阅 ID
+    "sdk_error",
+    "base_url",           # 内部端点
+    "url",                # 容器端点
+    "api_key_env",
+    "username_env",
+    "auto_key_env",
+    "key_source",
+    "source",             # 注册表文件路径
+    "login_domain",
+    "error",
+})
+
+
+def _redact_sensitive_fields(node: Any) -> Any:
+    """递归剔除未登录响应中的内部路径 / 端点 / 账号标识"""
+    if isinstance(node, dict):
+        return {
+            key: _redact_sensitive_fields(value)
+            for key, value in node.items()
+            if key not in _SENSITIVE_HEALTH_KEYS
+        }
+    if isinstance(node, list):
+        return [_redact_sensitive_fields(item) for item in node]
+    return node
+
+
 @app.get(f"{API_PREFIX}/health", tags=["auth"])
-async def health() -> JSONResponse:
+async def health(authenticated: bool = Depends(_request_is_authenticated)) -> JSONResponse:
     """
     健康检查 + AI 配置概览 + 存储后端（sqlite / memory），方便 App 显示状态。
     Azure 的 configured 取自后台探测快照：这条请求永不阻塞——还没探测完就返回
     configured=null / credential_source="probing"（后台每 30 秒刷新一次）。
+
+    未携带有效 JWT 时返回脱敏版本：保留检查清单需要的信息，但不暴露
+    订阅 ID、本机路径与内部端点。
     """
     azure_probe = azure_tools.current_probe()  # 只读快照，不等待凭据链
 
-    return JSONResponse({
+    payload: dict = {
         "status": "ok",
         # 进程信息（前端检查清单用）
         "python": {
@@ -2526,7 +2793,16 @@ async def health() -> JSONResponse:
             "max_identical_tool_calls": MAX_IDENTICAL_TOOL_CALLS,
         },
         "usage": usage_summary(),
-    })
+    }
+
+    if authenticated:
+        return JSONResponse(payload)
+
+    redacted = _redact_sensitive_fields(payload)
+    # 保留「是不是 PyInstaller 内嵌后端」的判断能力，但不暴露完整路径
+    executable = str(payload.get("python", {}).get("executable") or "")
+    redacted["python"]["executable"] = "backend_server" if "backend_server" in executable else ""
+    return JSONResponse(redacted)
 
 
 # ---------- 同步对话 ----------

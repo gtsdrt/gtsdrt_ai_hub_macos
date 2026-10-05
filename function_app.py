@@ -88,7 +88,7 @@ def _estimate_cost(provider: str, prompt_tokens: int, completion_tokens: int) ->
 
 ANSIBLE_CONTAINER_URL = os.environ.get(
     "ANSIBLE_CONTAINER_URL",
-    "https://ansible-executor.proudhill-c1ac3b31.norwayeast.azurecontainerapps.io"
+    "https://ansible-executor.example.invalid"
 )
 ANSIBLE_CONTAINER_SECRET_NAME = os.environ.get("ANSIBLE_CONTAINER_SECRET_NAME", "ANSIBLE-EXECUTOR-API-KEY")
 
@@ -376,10 +376,13 @@ CONFIG = {
 
 
 # ========== JWT 认证配置（从环境变量读取） ==========
-JWT_SECRET = os.environ.get("JWT_SECRET", "your-very-secret-key-change-it-in-production")
+# 注意：本文件是旧 Azure Functions 版本，仅作历史参考，运行时不会被引用。
+# 这里不再提供曾经公开过的默认密钥/口令，避免被人照抄到在跑的服务里
+# （当前实现的安全默认见 main.py 与 SECURITY.md）。
+JWT_SECRET = os.environ.get("JWT_SECRET", "")
 JWT_EXPIRATION_MINUTES = int(os.environ.get("JWT_EXPIRATION_MINUTES", 60 * 24))
 ADMIN_USERNAME = os.environ.get("ADMIN_USERNAME", "admin")
-ADMIN_PASSWORD = os.environ.get("ADMIN_PASSWORD", "password123")
+ADMIN_PASSWORD = os.environ.get("ADMIN_PASSWORD", "")
 
 
 # ========== Cosmos DB for Table 持久化配置 ==========

@@ -168,17 +168,23 @@ class NdUrlAndAuthTests(NdToolTestBase):
         self.assertEqual(payload["status"], "success")
         self.assertEqual(payload["data"], {"fabrics": [{"name": "f1"}]})
 
-    def test_06_verify_tls_defaults_off_and_can_be_enabled(self) -> None:
+    def test_06_verify_tls_defaults_on_and_can_be_disabled(self) -> None:
+        # 安全默认：不配置就校验证书（这些请求带着 API Key / 口令 / 会话 token）
         os.environ.pop("ND_VERIFY_TLS", None)
+        self.assertTrue(nd.verify_tls())
+        nd.execute("nexus_infra_about", {})
+        self.assertTrue(FakeHTTPXClient.calls[0]["verify"])
+
+        # 自签证书环境需要显式关闭
+        FakeHTTPXClient.calls = []
+        os.environ["ND_VERIFY_TLS"] = "false"
         self.assertFalse(nd.verify_tls())
         nd.execute("nexus_infra_about", {})
         self.assertFalse(FakeHTTPXClient.calls[0]["verify"])
 
-        FakeHTTPXClient.calls = []
+        # 显式打开同样生效
         os.environ["ND_VERIFY_TLS"] = "true"
         self.assertTrue(nd.verify_tls())
-        nd.execute("nexus_infra_about", {})
-        self.assertTrue(FakeHTTPXClient.calls[0]["verify"])
 
 
 class NdPasswordAuthTests(NdToolTestBase):

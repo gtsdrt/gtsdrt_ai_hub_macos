@@ -16,7 +16,7 @@ Cisco Nexus Dashboard 工具集（只读查询，31 个工具：Infra 17 + Manag
   ND_USERNAME       API Key 模式必填；密码模式必填
   ND_PASSWORD       密码模式必填
   ND_LOGIN_DOMAIN   密码模式的登录域，默认 local
-  ND_VERIFY_TLS     是否校验 TLS 证书，默认 false（Nexus Dashboard 常见自签证书）
+  ND_VERIFY_TLS     是否校验 TLS 证书，默认 true；自签证书环境需显式设为 false
   ND_TIMEOUT        单次请求超时秒数，默认 30
   ND_TOKEN_TTL_SECONDS  token 缓存时长，默认 600
 
@@ -390,8 +390,17 @@ def auth_mode():
 
 
 def verify_tls():
-    # Nexus Dashboard 出厂多为自签证书，官方示例也是 --insecure，所以默认不校验
-    return _env(VERIFY_TLS_ENV).lower() in ("1", "true", "yes", "on")
+    """
+    是否校验 TLS 证书，默认校验。
+
+    Nexus Dashboard 常见自签证书，但这里的请求会带上 API Key / 账号口令 / 会话 JWT，
+    默认关闭校验等于把凭据交给同网段的中间人，因此必须显式设置 ND_VERIFY_TLS=false
+    才关闭（或设为 0/no/off）。
+    """
+    configured = _env(VERIFY_TLS_ENV).strip().lower()
+    if not configured:
+        return True
+    return configured not in ("0", "false", "no", "off")
 
 
 def timeout_seconds():

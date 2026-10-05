@@ -12,6 +12,7 @@ from __future__ import annotations
 import json
 import logging
 import os
+import urllib.parse
 from typing import Any, Optional
 
 import httpx
@@ -486,8 +487,18 @@ def _require(arguments: dict, name: str) -> str:
 
 def _dispatch(method: str, kwargs: dict) -> Any:
     verb, template = ENDPOINTS[method]
-    path = template.format(**kwargs) if kwargs else template
-    return _request(path) if verb == "GET" else _request(path)
+    if verb != "GET":
+        # 本模块只做只读查询；出现非 GET 说明配置写错了，宁可报错也不要静默当 GET 发出去
+        raise ValueError(f"{method} 只支持只读 GET 请求，收到 {verb}")
+
+    # 参数由模型提供，直接 format 进 URL 可以塞入额外路径段或查询串，
+    # 从而访问 ENDPOINTS 表以外的接口。逐段 URL 编码后再拼接。
+    encoded = {
+        name: urllib.parse.quote(str(value), safe="")
+        for name, value in (kwargs or {}).items()
+    }
+    path = template.format(**encoded) if encoded else template
+    return _request(path)
 
 
 # ------------------------------------------------------------------ 工具实现

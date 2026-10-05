@@ -42,6 +42,11 @@ except ImportError:  # pragma: no cover
 
 DEFAULT_TTL_HOURS = "24"
 
+# 后端现在拒绝默认/空管理员口令与公开的默认 JWT 密钥，测试必须显式提供一组
+TEST_ADMIN_PASSWORD = "unit-test-admin-password"
+os.environ.setdefault("JWT_SECRET", "unit-test-secret-at-least-32-bytes-long")
+os.environ.setdefault("ADMIN_PASSWORD", TEST_ADMIN_PASSWORD)
+
 
 def fresh_main(db_path: str, **env_overrides: str):
     """
@@ -89,7 +94,7 @@ class StorageTestBase(unittest.TestCase):
             f"{main_module.API_PREFIX}/login",
             json={
                 "username": os.environ.get("ADMIN_USERNAME", "admin"),
-                "password": os.environ.get("ADMIN_PASSWORD", "password123"),
+                "password": os.environ.get("ADMIN_PASSWORD", TEST_ADMIN_PASSWORD),
             },
         )
         self.assertEqual(response.status_code, 200, response.text)

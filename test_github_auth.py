@@ -67,6 +67,7 @@ class GitHubAuthTests(unittest.TestCase):
             "GITHUB_CLIENT_ID": "github-test-client",
             "GITHUB_ALLOWED_LOGINS": "octocat",
             "JWT_SECRET": "unit-test-secret-at-least-32-bytes-long",
+            "ADMIN_PASSWORD": "unit-test-admin-password",
         })
         sys.modules.pop("main", None)
         cls.main = importlib.import_module("main")

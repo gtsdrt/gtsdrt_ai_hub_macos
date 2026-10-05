@@ -56,7 +56,7 @@ class GoogleAuthTests(unittest.TestCase):
             "GOOGLE_ALLOWED_EMAILS": "person@example.com",
             "JWT_SECRET": "unit-test-secret-at-least-32-bytes-long",
             "ADMIN_USERNAME": "admin",
-            "ADMIN_PASSWORD": "password123",
+            "ADMIN_PASSWORD": "unit-test-admin-password",
         })
         sys.modules.pop("main", None)
         cls.main = importlib.import_module("main")
@@ -69,7 +69,7 @@ class GoogleAuthTests(unittest.TestCase):
         cls.temp_dir.cleanup()
 
     def test_local_admin_login_is_preserved(self) -> None:
-        response = self.client.post("/api/login", json={"username": "admin", "password": "password123"})
+        response = self.client.post("/api/login", json={"username": "admin", "password": "unit-test-admin-password"})
         self.assertEqual(response.status_code, 200, response.text)
         claims = self.main._decode_token(response.json()["token"])
         self.assertEqual(claims["provider"], "local")

@@ -287,7 +287,11 @@ def _parse_registry_payload(payload: Any, source: str) -> list[Endpoint]:
         name = str(item.get("name") or "").strip()
         url = _normalize_url(str(item.get("url") or item.get("base_url") or ""))
         if not name or not url:
-            logger.warning("[Container] 跳过注册表条目（缺 name 或 url）：%s", item)
+            # 只记录字段名，不要把整条 item 打进日志——里面可能带明文 api_key
+            logger.warning(
+                "[Container] 跳过注册表条目（缺 name 或 url）：name=%r url=%r fields=%s",
+                name, url, sorted(item.keys()),
+            )
             continue
         mode = str(item.get("mode") or "auto").strip().lower()
         if mode not in ("auto", "list", "all"):
@@ -445,8 +449,13 @@ def is_callable(endpoint: Endpoint, task: str, meta: Any = None) -> bool:
         return True
     if endpoint.mode == "list":
         return False
-    # auto：容器自报只读的放行，再回退到内置只读名单
-    if _meta_read_only(meta) is True:
+
+    # auto：容器明确标注 read_only=false 时一律拦下——即使任务名恰好撞上内置只读名单。
+    # 内置名单只是「拿不到元数据」时的兜底，不能反过来覆盖容器自己的写操作声明。
+    read_only = _meta_read_only(meta)
+    if read_only is False:
+        return False
+    if read_only is True:
         return True
     return task in DEFAULT_READ_ONLY_TASKS
 
@@ -633,13 +642,14 @@ def _run_task(arguments: dict) -> str:
         else:
             raise ValueError("参数 " + str(key) + " 的类型不支持（只接受字符串/数字/布尔/简单数组）")
 
-    # 决策：显式白名单/全部放行时不用打网络；auto 模式下需要看容器的 read_only 元数据
+    # 决策：显式白名单/全部放行时不用打网络；auto 模式下必须看容器的 read_only 元数据
+    # （包括名字在内置只读名单里的任务——容器可能把它标成写操作）
     needs_meta = not endpoint.all_tasks_allowed and task not in endpoint.allowed_tasks and endpoint.mode == "auto"
     meta = None
-    if needs_meta and task not in DEFAULT_READ_ONLY_TASKS:
+    if needs_meta:
         try:
             meta = _fetch_tasks(endpoint).get(task)
-        except Exception as exc:  # 拿不到元数据不影响「内置只读名单」这条快路径
+        except Exception as exc:  # 拿不到元数据时回退到内置只读名单，不影响可用性
             logger.warning("[Container] %s 取任务元数据失败：%s", endpoint.name, exc)
 
     if not is_callable(endpoint, task, meta):

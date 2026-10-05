@@ -25,6 +25,8 @@ import httpx
 logger = logging.getLogger("tools.azure")
 
 SUBSCRIPTION_ENV = "AZURE_SUBSCRIPTION_ID"
+# 可选允许列表（逗号分隔）：设置后 AI 只能查询列表内的订阅，防止模型/注入用参数越权换订阅
+ALLOWED_SUBSCRIPTIONS_ENV = "AZURE_ALLOWED_SUBSCRIPTIONS"
 ARM_ENDPOINT = "https://management.azure.com"
 
 # 凭据探测：只 get_token（不打任何管理 API）
@@ -450,11 +452,25 @@ def default_subscription_id() -> Optional[str]:
     return value or None
 
 
+def allowed_subscription_ids() -> set[str]:
+    """AZURE_ALLOWED_SUBSCRIPTIONS 允许列表（逗号分隔）；为空表示不限制"""
+    raw = os.environ.get(ALLOWED_SUBSCRIPTIONS_ENV) or ""
+    return {item.strip().lower() for item in raw.split(",") if item.strip()}
+
+
 def _subscription_id(arguments: dict) -> str:
     subscription_id = str(arguments.get("subscription_id") or "").strip() or default_subscription_id()
     if not subscription_id:
         raise ValueError(
             f"未指定订阅：请在参数里传 subscription_id，或设置环境变量 {SUBSCRIPTION_ENV}"
+        )
+
+    # 模型可以通过参数显式指定任意订阅，从而跳出 App 设定的范围。
+    # 配置了允许列表就只放行列表内的订阅。
+    allowed = allowed_subscription_ids()
+    if allowed and subscription_id.lower() not in allowed:
+        raise ValueError(
+            f"订阅 {subscription_id} 不在 {ALLOWED_SUBSCRIPTIONS_ENV} 允许列表内，已拒绝。"
         )
     return subscription_id
 

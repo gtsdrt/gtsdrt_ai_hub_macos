@@ -314,13 +314,20 @@ class ListToolTests(ContainerTestBase):
 
 
 class RunTaskTests(ContainerTestBase):
-    def test_17_builtin_read_only_fast_path_skips_metadata_fetch(self) -> None:
+    def test_17_builtin_read_only_task_still_checks_container_metadata(self) -> None:
+        """名字在内置只读名单里也要先问容器：内置名单只是兜底，不能覆盖容器的写操作声明"""
         self.write_registry([{"name": "c1", "url": BASE, "api_key": "k"}])
-        FakeHTTPXClient.handler = staticmethod(
-            lambda method, url, headers, body: FakeResponse(
+
+        def handler(method, url, headers, body):
+            if url.endswith("/tasks"):
+                return FakeResponse(
+                    {"tasks": {"meraki_get_switch_ports": {"required_params": [], "read_only": True}}}
+                )
+            return FakeResponse(
                 {"returncode": 0, "stdout": "out", "stderr": "", "data": {"ok": 1}}
             )
-        )
+
+        FakeHTTPXClient.handler = staticmethod(handler)
         payload = self.result(
             ct.container_run_task({"task": "meraki_get_switch_ports", "params": {"serial": "Q2XX-1"}})
         )
@@ -328,10 +335,30 @@ class RunTaskTests(ContainerTestBase):
         self.assertEqual(payload["status"], "success")
         self.assertEqual(payload["container"], "c1")
         self.assertEqual(payload["data"], {"ok": 1})
-        # 只读快路径：直接 POST，不去拉 /tasks
-        self.assertEqual([call["method"] for call in FakeHTTPXClient.calls], ["POST"])
-        self.assertEqual(FakeHTTPXClient.calls[0]["json"],
+        # 先 GET /tasks 确认容器也标它只读，再 POST 执行
+        self.assertEqual([call["method"] for call in FakeHTTPXClient.calls], ["GET", "POST"])
+        self.assertEqual(FakeHTTPXClient.calls[-1]["json"],
                          {"task": "meraki_get_switch_ports", "params": {"serial": "Q2XX-1"}})
+
+    def test_17b_container_write_flag_overrides_builtin_read_only_name(self) -> None:
+        """容器把内置只读名单里的同名任务标成 read_only=false 时，必须拦住且不发 POST"""
+        self.write_registry([{"name": "c1", "url": BASE, "api_key": "k"}])
+
+        def handler(method, url, headers, body):
+            if url.endswith("/tasks"):
+                return FakeResponse(
+                    {"tasks": {"meraki_get_switch_ports": {"required_params": [], "read_only": False}}}
+                )
+            raise AssertionError("被判定为写操作的任务不应发出 POST")
+
+        FakeHTTPXClient.handler = staticmethod(handler)
+        payload = self.result(
+            ct.container_run_task({"task": "meraki_get_switch_ports", "params": {"serial": "Q2XX-1"}})
+        )
+
+        self.assertEqual(payload["status"], "error")
+        self.assertIn("read_only=false", payload["message"])
+        self.assertEqual([call["method"] for call in FakeHTTPXClient.calls], ["GET"])
 
     def test_18_auto_mode_checks_read_only_metadata_then_runs(self) -> None:
         self.write_registry([{"name": "c1", "url": BASE, "api_key": "k"}])
@@ -391,7 +418,7 @@ class RunTaskTests(ContainerTestBase):
                 "params": {"serial": "Q", "subnet_names": ["a", "b"], "skip": None},
             }
         )
-        self.assertEqual(FakeHTTPXClient.calls[0]["json"]["params"],
+        self.assertEqual(FakeHTTPXClient.calls[-1]["json"]["params"],
                          {"serial": "Q", "subnet_names": ["a", "b"]})
 
     def test_23_unsupported_protocol_is_rejected(self) -> None:

@@ -28,6 +28,9 @@ if PROJECT_DIR not in sys.path:
     sys.path.insert(0, PROJECT_DIR)
 
 os.environ.setdefault("AICHAT_DB_PATH", "/tmp/aichat-toolloop-test.db")
+# 后端现在拒绝默认/空管理员口令，测试必须显式提供一组
+os.environ.setdefault("JWT_SECRET", "unit-test-secret-at-least-32-bytes-long")
+os.environ.setdefault("ADMIN_PASSWORD", "unit-test-admin-password")
 
 import main  # noqa: E402
 
