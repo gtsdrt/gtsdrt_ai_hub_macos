@@ -489,7 +489,7 @@ struct SettingsView: View {
                     }
                 }
 
-                Toggle(loc.t("校验 TLS 证书（自签证书请保持关闭）"), isOn: $settings.ndVerifyTLS)
+                Toggle(loc.t("校验 TLS 证书（默认开启；自签证书需关闭）"), isOn: $settings.ndVerifyTLS)
 
                 HStack(spacing: 10) {
                     Button(loc.t("保存 Nexus Dashboard 凭据")) { saveSettings() }

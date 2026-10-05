@@ -230,8 +230,9 @@ sequenceDiagram
 三条路径最终**都签发同一个后端 JWT**（HS256，默认 24 小时），客户端把 token 存进 Keychain。
 Google access token 只在后端短暂用于读身份，落不到客户端。
 
-鉴权入口是 FastAPI 依赖 `require_auth()`：优先 `Authorization: Bearer <JWT>`，
-失败时回退 `X-MS-CLIENT-PRINCIPAL`（兼容旧 Easy Auth 部署），都不行抛 401。
+鉴权入口是 FastAPI 依赖 `require_auth()`：要求 `Authorization: Bearer <JWT>`。
+`X-MS-CLIENT-PRINCIPAL`（Easy Auth）**默认不信任**，只有显式开启 `AICHAT_TRUST_EASY_AUTH=1`
+并同时配置 `AICHAT_EASY_AUTH_SECRET` 时才作为补充通道；都不行抛 401。
 
 ### 5.3 一次对话的完整时序（核心流程）
 
@@ -536,7 +537,7 @@ DMG 内容 = `AIChatApp.app` + `Applications` 快捷方式 + `README.txt`。
 | **界面加文案** | 三套语言表同在 `Services/`：`Localization.swift` + `LocalizationTableEN.swift` + `LocalizationTableNB.swift`，**三处都要加** |
 | **界面字号** | 用 `.appFont(.body)` 而不是 `.font(.body)`，自动跟随 ⌘+/⌘− 缩放 |
 | **改存储/换数据库** | 集中在 `main.py`「3. 存储层」一节（`_db()` / `_init_storage()` / `_save_conversation()` 等） |
-| **调试后端接口** | `python main.py` 后开 `http://127.0.0.1:8000/docs`（Swagger UI） |
+| **调试后端接口** | `AICHAT_ENABLE_DOCS=1 python main.py` 后开 `http://127.0.0.1:8000/docs`（Swagger UI；默认关闭，因为文档与 openapi.json 不需要鉴权） |
 | **看内嵌后端日志** | `~/Library/Logs/AIChatApp/backend.log`，或设置页里的「后端日志」 |
 | **只改客户端 UI** | `xcodebuild -project AIChatApp/AIChatApp.xcodeproj -scheme AIChatApp -configuration Debug -derivedDataPath .xcbuild build` |
 
@@ -549,8 +550,9 @@ DMG 内容 = `AIChatApp.app` + `Applications` 快捷方式 + `README.txt`。
 
 写这份文档时对照代码发现的问题，建议顺手修（不影响功能）：
 
-1. **README 安全说明与实际默认值矛盾**：README 末尾写「后端默认监听 `0.0.0.0:8000`」，
-   但 `main.py` 现在默认 `127.0.0.1`（commit `7a25d73` 改为安全默认），README 未同步。
+1. ~~**README 安全说明与实际默认值矛盾**：README 末尾写「后端默认监听 `0.0.0.0:8000`」，
+   但 `main.py` 现在默认 `127.0.0.1`（commit `7a25d73` 改为安全默认），README 未同步。~~
+   **已修**：README 已改为 `127.0.0.1`，`.env.example` 同步。
 2. **`main.py` 文档字符串过期**：`run_ai_with_tools()` 的 docstring 写「默认 `MAX_TOOL_ITERATIONS=10`」，
    实际常量是 15。
 3. **`AIChatApp/README.md` 版本号**：按当前 `MARKETING_VERSION` 更新。

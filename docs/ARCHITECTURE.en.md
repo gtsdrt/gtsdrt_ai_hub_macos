@@ -236,9 +236,10 @@ All three paths end up issuing **the same backend JWT** (HS256, 24 h by default)
 in the Keychain. The Google access token is used briefly on the backend to read the identity and never
 reaches the client.
 
-The auth entry point is the FastAPI dependency `require_auth()`: it prefers
-`Authorization: Bearer <JWT>`, falls back to `X-MS-CLIENT-PRINCIPAL` (compatibility with older
-Easy Auth deployments), and returns 401 if neither works.
+The auth entry point is the FastAPI dependency `require_auth()`: it requires
+`Authorization: Bearer <JWT>`. `X-MS-CLIENT-PRINCIPAL` (Easy Auth) is **not trusted by default**; it
+only acts as an additional channel when `AICHAT_TRUST_EASY_AUTH=1` is set together with
+`AICHAT_EASY_AUTH_SECRET`. Otherwise it returns 401.
 
 ### 5.3 A full chat request (the core flow)
 
@@ -563,7 +564,7 @@ use mocks):
 | **Add UI copy** | The three language tables live together in `Services/`: `Localization.swift` + `LocalizationTableEN.swift` + `LocalizationTableNB.swift` — **add the string to all three** |
 | **UI font scaling** | Use `.appFont(.body)` instead of `.font(.body)`; it follows ⌘+/⌘− automatically |
 | **Change storage / swap the database** | Concentrated in the "Storage layer" section of `main.py` (`_db()` / `_init_storage()` / `_save_conversation()` etc.) |
-| **Explore the backend API** | Run `python main.py` and open `http://127.0.0.1:8000/docs` (Swagger UI) |
+| **Explore the backend API** | Run `AICHAT_ENABLE_DOCS=1 python main.py` and open `http://127.0.0.1:8000/docs` (Swagger UI; off by default because the docs and `openapi.json` require no authentication) |
 | **Find the bundled backend log** | `~/Library/Logs/AIChatApp/backend.log`, or the "backend log" panel in Settings |
 | **Build only the client UI** | `xcodebuild -project AIChatApp/AIChatApp.xcodeproj -scheme AIChatApp -configuration Debug -derivedDataPath .xcbuild build` |
 
@@ -578,9 +579,10 @@ fields.
 Issues found while writing this document by comparing the docs against the code.
 None affect functionality, but they are worth fixing:
 
-1. **README security note contradicts the actual default**: the end of the README still says the
+1. ~~**README security note contradicts the actual default**: the end of the README still says the
    backend listens on `0.0.0.0:8000`, but `main.py` now defaults to `127.0.0.1` (commit `7a25d73`
-   made this the safe default). The README was not updated.
+   made this the safe default). The README was not updated.~~
+   **Fixed**: the README now says `127.0.0.1`, and `.env.example` was aligned too.
 2. **Stale docstring in `main.py`**: `run_ai_with_tools()` says "`MAX_TOOL_ITERATIONS=10` by default",
    but the constant is actually 15.
 3. **Version in `AIChatApp/README.md`**: keep it aligned with the current `MARKETING_VERSION`.

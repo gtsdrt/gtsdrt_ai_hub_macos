@@ -112,7 +112,7 @@ final class AppSettings: ObservableObject {
     @Published var ndAPIKey: String
     @Published var ndPassword: String
     @Published var ndLoginDomain: String
-    /// 是否校验 TLS 证书（Nexus Dashboard 多为自签证书，默认关闭）
+    /// 是否校验 TLS 证书（Nexus Dashboard 多为自签证书，默认开启校验）
     @Published var ndVerifyTLS: Bool
 
     // 多容器注册表（Serverless 容器：代码在 GitHub，跑在 Azure Container Apps）
@@ -190,8 +190,14 @@ final class AppSettings: ObservableObject {
         ndPassword = keychain.read(KeychainStore.Keys.ndPassword) ?? ""
         ndLoginDomain = defaults.string(forKey: DefaultsKey.ndLoginDomain)
             ?? dotEnv["ND_LOGIN_DOMAIN"] ?? "local"
-        ndVerifyTLS = defaults.object(forKey: DefaultsKey.ndVerifyTLS) as? Bool
-            ?? Self.boolFromEnv(dotEnv["ND_VERIFY_TLS"])
+        // 默认开启证书校验；用户显式存过或 .env 显式配置时以配置为准
+        if let storedVerifyTLS = defaults.object(forKey: DefaultsKey.ndVerifyTLS) as? Bool {
+            ndVerifyTLS = storedVerifyTLS
+        } else if let rawVerifyTLS = dotEnv["ND_VERIFY_TLS"] {
+            ndVerifyTLS = Self.boolFromEnv(rawVerifyTLS)
+        } else {
+            ndVerifyTLS = true
+        }
 
         // 注册表：优先用落盘文件（后端读的也是同一份）；没有落盘文件时用默认值/旧 .env 预填
         let rawContainerRegistry = Self.loadContainerRegistry(dotEnv: dotEnv)
@@ -352,7 +358,15 @@ final class AppSettings: ObservableObject {
         ) ?? []
         for name in Set(Self.keychainEnvironmentSecrets + migratedSecretNames) {
             // 清掉父进程继承的旧值，再从 Keychain 注入；空值可阻止 dotenv 回退。
-            environment[name] = keychain.read(Self.keychainAccount(forEnvironmentName: name)) ?? ""
+            let stored = keychain.read(Self.keychainAccount(forEnvironmentName: name)) ?? ""
+            // 例外：ADMIN_PASSWORD / JWT_SECRET 为空时不要下发空串。否则会挡掉 .env 里
+            // 的值，而后端对空口令是 fail closed（拒绝启动）。留空让它们回退到 .env，
+            // 两边都没有时后端会给出明确的启动错误。
+            if stored.isEmpty, name == "ADMIN_PASSWORD" || name == "JWT_SECRET" {
+                environment.removeValue(forKey: name)
+                continue
+            }
+            environment[name] = stored
         }
         if !deepseekKey.trimmingCharacters(in: .whitespaces).isEmpty {
             environment["DEEPSEEK_API_KEY"] = deepseekKey.trimmingCharacters(in: .whitespaces)
@@ -657,20 +671,8 @@ final class AppSettings: ObservableObject {
     }
 
     /// .env 中需要迁移到 Keychain 的变量名。匹配规则也覆盖后续新增的 *_KEY / *_SECRET 等凭据。
-    private static let keychainEnvironmentSecrets = [
-        "DEEPSEEK_API_KEY",
-        "KIMI_API_KEY",
-        "OPENAI_API_KEY",
-        "AZURE_CLIENT_SECRET",
-        "MERAKI_API_KEY",
-        "ND_API_KEY",
-        "ND_PASSWORD",
-        "ADMIN_PASSWORD",
-        "JWT_SECRET",
-        "ANSIBLE_EXECUTOR_API_KEY",
-        "GOOGLE_CLIENT_SECRET",
-        "CONTAINER_ENDPOINTS_JSON",
-    ]
+    /// 权威定义在 BackupPolicy（standalone 备份回归测试也会编译它，恢复侧共用同一份）
+    nonisolated static let keychainEnvironmentSecrets = BackupPolicy.allowedEnvironmentSecretNames
 
     private static func isSecretEnvironmentName(_ rawName: String) -> Bool {
         let name = rawName.uppercased()

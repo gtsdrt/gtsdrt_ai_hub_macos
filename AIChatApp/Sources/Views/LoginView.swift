@@ -71,7 +71,8 @@ struct LoginView: View {
                     TextField("admin", text: $username)
                 }
                 LabeledField(title: loc.t("密码")) {
-                    SecureField("password123", text: $password)
+                    // 不再用默认口令做占位提示：后端已无默认口令，占位只会误导
+                    SecureField("", text: $password)
                 }
                 Toggle(loc.t("记住密码（保存在 Keychain）"), isOn: $rememberPassword)
                     .appFont(.caption)

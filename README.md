@@ -86,7 +86,16 @@ cp .env.example .env        # 至少填一个 AI Provider 的 Key；不填也能
 .venv/bin/python main.py    # 默认 http://127.0.0.1:8000
 ```
 
-打开 <http://127.0.0.1:8000/docs> 可以直接调所有接口。不配置任何 Key 时后端返回 mock 回复，方便先联调前端。
+`/docs` 与 `/openapi.json` 默认关闭（它们无需鉴权）；本机调试时用 `AICHAT_ENABLE_DOCS=1` 打开，
+然后访问 <http://127.0.0.1:8000/docs>。不配置任何 Key 时后端返回 mock 回复，方便先联调前端。
+
+启动前必须先设置管理员口令（未设置、为空、仍是历史默认值或短于 8 位时后端会拒绝启动）：
+
+```bash
+openssl rand -base64 24   # 把这个值写进 .env 的 ADMIN_PASSWORD
+```
+
+`JWT_SECRET` 可以不填：后端会生成随机密钥并存到 `~/Library/Application Support/AIChatApp/jwt_secret`（0600）。
 
 ### 2. 跑起来做一次冒烟验证
 
@@ -95,7 +104,7 @@ curl -s http://127.0.0.1:8000/api/health | python3 -m json.tool
 
 TOKEN=$(curl -s -X POST http://127.0.0.1:8000/api/login \
   -H 'Content-Type: application/json' \
-  -d '{"username":"admin","password":"password123"}' | python3 -c 'import json,sys;print(json.load(sys.stdin)["token"])')
+  -d '{"username":"admin","password":"<你的 ADMIN_PASSWORD>"}' | python3 -c 'import json,sys;print(json.load(sys.stdin)["token"])')
 
 curl -s http://127.0.0.1:8000/api/chat -H "Authorization: Bearer $TOKEN" \
   -H 'Content-Type: application/json' \
@@ -115,7 +124,8 @@ open .xcbuild/Build/Products/Debug/AIChatApp.app
 ```
 
 首次启动会：自动探测项目目录与 `.venv/bin/python` → 拉起 `main.py` → 用 `/api/health` 做健康检查。
-登录默认 `admin` / `password123`。
+登录口令就是你在 App「设置 → 本机管理员」里设置的那个（与后端 `.env` 的 `ADMIN_PASSWORD` 一致）；
+没有默认口令，未设置时后端会拒绝启动。
 
 ### 4. 跑测试
 
@@ -330,8 +340,13 @@ App 只是调用方，所以构建/部署跟本机没关系——**改代码 pus
 
 - `.env`、`*.db`、`*.pem`、构建产物与 DMG 均已加入 `.gitignore`，**不会入库**。
 - 历史版本 `function_app.py` 在入库前已做脱敏：租户/订阅 GUID、Key Vault 与 Azure OpenAI 端点、内部网络命名均替换为环境变量或占位符（`TENANT_SECONDARY_ID`、`SUBSCRIPTION_SECONDARY_ID`、`KEY_VAULT_URL`）。
-- 默认的 `JWT_SECRET` / `ADMIN_PASSWORD` 仅供本机开发，部署到任何可被外部访问的环境前必须更换。
-- 后端默认监听 `0.0.0.0:8000`。只想本机使用的话请设 `HOST=127.0.0.1`，并确保不要暴露到公网。
+- **没有默认口令**：`ADMIN_PASSWORD` 必须显式设置（短于 8 位或仍是历史默认值时会拒绝启动）；`JWT_SECRET` 未设置时自动生成随机密钥并存到 `~/Library/Application Support/AIChatApp/jwt_secret`（0600）。
+- 后端默认监听 `127.0.0.1:8000`（仅本机）。需要远程访问请走 SSH 隧道或 VPN，**不要**把 `HOST` 改成 `0.0.0.0` 直接暴露端口。
+- `/docs`、`/redoc`、`/openapi.json` 默认关闭；Easy Auth 请求头（`X-MS-CLIENT-PRINCIPAL`）默认不信任，需显式开启并配置共享密钥。
+- `webhook_url` 默认禁止访问内网/回环地址；容器执行器默认只放行只读任务。
+- 备份文件按不可信输入处理：恢复时会校验端点与环境变量名白名单。
+
+完整的威胁模型、设计取舍、漏洞上报渠道与部署加固清单见 **[SECURITY.md](SECURITY.md)**。
 
 ---
 

@@ -386,8 +386,11 @@ final class BackendController: ObservableObject {
             withIntermediateDirectories: true
         )
         if !fileManager.fileExists(atPath: logFileURL.path) {
-            fileManager.createFile(atPath: logFileURL.path, contents: nil)
+            fileManager.createFile(atPath: logFileURL.path, contents: nil,
+                                   attributes: [.posixPermissions: 0o600])
         }
+        // 已存在的日志文件也收紧权限，避免沿用旧的宽松权限
+        try? FileManager.default.setAttributes([.posixPermissions: 0o600], ofItemAtPath: logFileURL.path)
 
         logFileHandle = try? FileHandle(forWritingTo: logFileURL)
         logFileHandle?.seekToEndOfFile()

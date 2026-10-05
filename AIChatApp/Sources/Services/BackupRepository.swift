@@ -17,6 +17,23 @@ enum BackupPolicy {
         "nd_password", "backend_admin_password", "backend_jwt_secret", "ansible_executor_api_key",
         "google_client_secret"]
 
+    /// 允许从备份恢复的环境变量名：只认后端固定注入的密钥，避免备份注入
+    /// DYLD_INSERT_LIBRARIES / PATH 等危险变量（AppSettings.keychainEnvironmentSecrets 共用同一份）
+    static let allowedEnvironmentSecretNames = [
+        "DEEPSEEK_API_KEY",
+        "KIMI_API_KEY",
+        "OPENAI_API_KEY",
+        "AZURE_CLIENT_SECRET",
+        "MERAKI_API_KEY",
+        "ND_API_KEY",
+        "ND_PASSWORD",
+        "ADMIN_PASSWORD",
+        "JWT_SECRET",
+        "ANSIBLE_EXECUTOR_API_KEY",
+        "GOOGLE_CLIENT_SECRET",
+        "CONTAINER_ENDPOINTS_JSON",
+    ]
+
     static func allowedCredential(_ name: String) -> Bool {
         guard name != "env_secret_sparkle_private_key" else { return false }
         return credentialKeys.contains(name) ||
@@ -40,6 +57,9 @@ enum BackupPolicy {
                 guard let number = value as? NSNumber, CFGetTypeID(number) != CFBooleanGetTypeID(),
                       (0.6...2.5).contains(number.doubleValue) else { throw BackupError.invalidFile }
             } else if key == arrayKey {
+                // 这里只做格式与体积校验：同一个校验器在「导出备份」时也会跑，
+                // 若在此处限制名字白名单，会让存有历史自定义密钥名的机器无法导出备份。
+                // 白名单只在恢复路径（validateImportedSettings）里强制。
                 guard let names = value as? [String], names.count < 1000,
                       names.allSatisfy({ $0.range(of: "^[A-Z][A-Z0-9_]{0,127}$", options: .regularExpression) != nil }) else {
                     throw BackupError.invalidFile
@@ -161,8 +181,53 @@ struct BackupRepository {
         return recoveryURL
     }
 
+    /// 本机回环主机名白名单（与 BackupController.localOnly 的判定保持一致）
+    private static let loopbackHosts: Set<String> = ["127.0.0.1", "localhost", "::1", "[::1]"]
+
+    private static func isLoopback(_ url: URL) -> Bool {
+        guard let host = url.host?.lowercased() else { return false }
+        return loopbackHosts.contains(host)
+    }
+
+    /// 校验备份里要恢复的设置。只在恢复路径调用（导出侧共用 BackupPolicy.preferences，
+    /// 那里不能加白名单，否则存有历史自定义密钥名的机器无法导出备份）。
+    ///
+    /// 两件事：
+    ///   1. 端点必须指向本机或使用 HTTPS，防止备份把凭据引向攻击者主机
+    ///   2. 环境变量名必须是应用内置的那几个，防止备份注入 DYLD_INSERT_LIBRARIES / PATH 等
+    private func validateImportedSettings(_ values: [String: Any]) throws {
+        func endpoint(_ key: String) throws -> URL? {
+            guard let raw = values[key] as? String else { return nil }
+            let value = raw.trimmingCharacters(in: .whitespaces)
+            guard !value.isEmpty else { return nil }
+            guard let url = URL(string: value),
+                  let scheme = url.scheme?.lowercased(), scheme == "http" || scheme == "https",
+                  let host = url.host, !host.isEmpty else {
+                throw BackupError.invalidFile
+            }
+            if scheme != "https", !Self.isLoopback(url) {
+                throw BackupError.invalidFile
+            }
+            return url
+        }
+
+        // 本机后端地址只允许回环，避免管理员口令与 JWT 被发往别处
+        if let backend = try endpoint("backendBaseURL"), !Self.isLoopback(backend) {
+            throw BackupError.localOnly
+        }
+        _ = try endpoint("openaiBaseURL")
+        _ = try endpoint("ndBaseURL")
+
+        // 注册表注入的环境变量名只认固定名单
+        if let names = values[BackupPolicy.arrayKey] as? [String],
+           !names.allSatisfy({ BackupPolicy.allowedEnvironmentSecretNames.contains($0) }) {
+            throw BackupError.invalidFile
+        }
+    }
+
     private func installSettings(_ payload: BackupPayload) throws {
         let values = try BackupPolicy.preferences(payload.preferences)
+        try validateImportedSettings(values)
         if let registry = payload.registry { try BackupArchive.writePrivate(registry, to: registryURL) }
         else if FileManager.default.fileExists(atPath: registryURL.path) { try FileManager.default.removeItem(at: registryURL) }
         for key in BackupPolicy.allKeys {

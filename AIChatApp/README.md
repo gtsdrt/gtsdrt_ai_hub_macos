@@ -48,7 +48,8 @@ open .xcbuild/Build/Products/Debug/AIChatApp.app
 
 首次启动会：自动探测项目目录与 `.venv/bin/python` → 拉起 `main.py` → 用 `/api/health` 做健康检查。
 
-登录默认 `admin` / `password123`（后端可用 `ADMIN_USERNAME`、`ADMIN_PASSWORD` 覆盖）。
+登录口令就是「设置 → 本机管理员」里设置的那个（与后端 `ADMIN_PASSWORD` 一致）。
+没有默认口令：未设置、为空、仍是历史默认值或短于 8 位时后端会拒绝启动。
 
 ### 配置 Google 登录
 
@@ -135,7 +136,7 @@ DMG 内容是 `AIChatApp.app` + 指向 `/Applications` 的快捷方式 + `README
 
 未签名版本的限制：
 
-- 首次打开会被 Gatekeeper 拦一次，必须右键「打开」（或到「系统设置 → 隐私与安全性」点「仍要打开」）；
+- 首次打开会被 Gatekeeper 拦截。确认来源后，到「系统设置 → 隐私与安全性」点「仍要打开（Open Anyway）」并按提示验证登录身份；较新的 macOS 不能仅靠右键「打开」放行；
 - 把这台机器上打的 DMG 拷给别人，对方也要重复这一步；
 - DMG 没有做 Apple 公证（notarization）；0.3 系列已接入 Sparkle，使用 Ed25519 签名进行应用内更新，首次安装仍需手动处理 Gatekeeper；
 - 内嵌后端会监听本机端口并写临时目录，个别企业终端安全软件会额外弹提示。
